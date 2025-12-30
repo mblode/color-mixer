@@ -1,17 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { checkWebGPUCapability, type WebGPUCapabilityResult } from './lib/webgpu'
-import { WebGPUStatus } from './components/WebGPUStatus'
 import { PigmentControls } from './components/PigmentControls'
 import { SimulationCanvas } from './components/SimulationCanvas'
-import {
-  DEFAULT_PIGMENT_SELECTION,
-  type PigmentPreset,
-  type PigmentSelectionState,
-  type PigmentSlot,
-  pigmentPalette,
-  otherSlot,
-} from './lib/pigments'
-import { hexToPigmentLatent, mixPigmentPair, ZERO_LATENT } from './lib/mixbox'
+import { type PigmentPreset, pigmentPalette } from './lib/pigments'
+import { hexToPigmentLatent, ZERO_LATENT } from './lib/mixbox'
 import type { BrushInput } from './simulation/types'
 
 const initialStatus: WebGPUCapabilityResult = {
@@ -20,29 +12,40 @@ const initialStatus: WebGPUCapabilityResult = {
   message: 'Checking for WebGPU support...',
 }
 
+const normalizeHex = (value: string) => {
+  const raw = value.trim().replace('#', '')
+  if (raw.length === 3) {
+    const expanded = raw
+      .split('')
+      .map((channel) => channel + channel)
+      .join('')
+    return `#${expanded}`.toUpperCase()
+  }
+  return `#${raw}`.toUpperCase()
+}
+
 function App() {
   const [capability, setCapability] = useState<WebGPUCapabilityResult>(initialStatus)
-  const [pigments, setPigments] = useState<PigmentSelectionState>(DEFAULT_PIGMENT_SELECTION)
-  const [activeSlot, setActiveSlot] = useState<PigmentSlot>('A')
-  const [ratio, setRatio] = useState(50)
-  const mixResult = useMemo(() => mixPigmentPair(pigments.A, pigments.B, ratio), [pigments, ratio])
-  const pigmentLatents = useMemo(
+  const [pigment, setPigment] = useState<PigmentPreset>(pigmentPalette[0])
+  const [customHex, setCustomHex] = useState('#FF8A00')
+  const customPigment = useMemo<PigmentPreset>(
     () => ({
-      A: pigments.A ? hexToPigmentLatent(pigments.A.hex) : ZERO_LATENT,
-      B: pigments.B ? hexToPigmentLatent(pigments.B.hex) : ZERO_LATENT,
+      id: 'custom',
+      name: 'Custom Pigment',
+      hex: customHex,
+      mixboxPigment: 'custom',
+      description: 'User-picked pigment.',
+      family: 'primary',
+      temperature: 'neutral',
     }),
-    [pigments],
+    [customHex],
   )
+  const pigmentLatent = useMemo(() => (pigment ? hexToPigmentLatent(pigment.hex) : ZERO_LATENT), [pigment])
   const brushInput = useMemo<BrushInput>(
     () => ({
-      hexA: pigments.A?.hex ?? '#ffffff',
-      hexB: pigments.B?.hex ?? '#ffffff',
-      ratio,
-      activeSlot,
-      latentA: pigmentLatents.A,
-      latentB: pigmentLatents.B,
+      latent: pigmentLatent,
     }),
-    [pigments, ratio, activeSlot, pigmentLatents],
+    [pigmentLatent],
   )
 
   useEffect(() => {
@@ -62,93 +65,66 @@ function App() {
     }
   }, [])
 
-  const setPigmentForSlot = (slot: PigmentSlot, pigment: PigmentPreset) => {
-    setPigments((prev) => ({ ...prev, [slot]: pigment }))
+  useEffect(() => {
+    if (pigment.id === customPigment.id && pigment.hex !== customPigment.hex) {
+      setPigment(customPigment)
+    }
+  }, [customPigment, pigment.hex, pigment.id])
+
+  const setActivePigment = (next: PigmentPreset) => {
+    setPigment(next)
   }
 
-  const removePigment = (slot: PigmentSlot) => {
-    setPigments((prev) => {
-      const next: PigmentSelectionState = { ...prev, [slot]: null }
-      if (activeSlot === slot) {
-        const fallback = otherSlot(slot)
-        if (next[fallback]) {
-          setActiveSlot(fallback)
-        }
-      }
-      return next
-    })
+  const handleCustomColorChange = (next: string) => {
+    setCustomHex(normalizeHex(next))
   }
 
-  const swapPigments = () => {
-    setPigments((prev) => ({ A: prev.B, B: prev.A }))
-    setActiveSlot((slot) => otherSlot(slot))
-  }
-
-  const showCanvasPlaceholder = capability.status === 'supported'
+  const showCanvas = capability.status === 'supported'
+  const showFallback = capability.status === 'unsupported'
 
   return (
     <div className="app">
       <header className="app__header">
-        <div>
-          <p className="eyebrow">Phase 5 · Realistic Color Mixing</p>
-          <h1>Paint Mixer MVP</h1>
-          <p className="lede">
-            Mix realistic pigments on a WebGPU canvas using Mixbox color math. Select two pigments, adjust their
-            ratio, and paint to watch them blend with physically accurate color behavior.
-          </p>
-        </div>
+        <h1>Color Mixer</h1>
       </header>
 
       <main className="app__main">
-        <section className="app__controls">
-          <WebGPUStatus result={capability} />
+        <section className="panel app__controls">
           <PigmentControls
             palette={pigmentPalette}
-            pigments={pigments}
-            activeSlot={activeSlot}
-            ratio={ratio}
-            mixResult={mixResult}
-            onSelectPigment={setPigmentForSlot}
-            onSetActiveSlot={setActiveSlot}
-            onRemovePigment={removePigment}
-            onSwapPigments={swapPigments}
-            onUpdateRatio={setRatio}
+            pigment={pigment}
+            customPigment={customPigment}
+            onCustomColorChange={handleCustomColorChange}
+            onSelectPigment={setActivePigment}
           />
         </section>
 
-        {showCanvasPlaceholder ? (
+        {showCanvas ? (
           <SimulationCanvas brushInput={brushInput} />
         ) : (
-          <section className="canvas-fallback" aria-label="WebGPU fallback message">
-            <h2>WebGPU required</h2>
-            <p>
-              Your browser did not pass the WebGPU capability check. Try Chrome 113+, Edge 113+, or Safari Technology
-              Preview with the "WebGPU" flag enabled.
-            </p>
-            {capability.message ? <p className="canvas-fallback__details">Details: {capability.message}</p> : null}
-            <ul className="canvas-fallback__steps">
-              <li>Enable the WebGPU/Unsafe WebGPU flag in your browser settings and restart.</li>
-              <li>Ensure hardware acceleration is enabled in the browser/system preferences.</li>
-              <li>Reload this page after enabling WebGPU to re-run the capability check.</li>
-            </ul>
-            <p className="canvas-fallback__actions">
-              Visit{' '}
-              <a href="https://developer.chrome.com/docs/web-platform/webgpu" target="_blank" rel="noreferrer">
-                WebGPU docs
-              </a>{' '}
-              for enablement instructions.
-            </p>
+          <section className="panel canvas-fallback" aria-label="WebGPU status message">
+            {showFallback ? (
+              <>
+                <p>WebGPU is unavailable. Use a recent Chromium build with WebGPU enabled.</p>
+                {capability.message ? <p className="canvas-fallback__details">{capability.message}</p> : null}
+                <a href="https://developer.chrome.com/docs/web-platform/webgpu" target="_blank" rel="noreferrer">
+                  WebGPU docs
+                </a>
+              </>
+            ) : (
+              <p>Checking WebGPU support...</p>
+            )}
           </section>
         )}
       </main>
 
       <footer className="app__footer">
         <p>
-          Mixing powered by{' '}
+          Mixing via{' '}
           <a href="https://scrtwpns.com/mixbox" target="_blank" rel="noreferrer">
             Mixbox
-          </a>{' '}
-          · CC BY-NC 4.0 · © Secret Weapons
+          </a>
+          .
         </p>
       </footer>
     </div>

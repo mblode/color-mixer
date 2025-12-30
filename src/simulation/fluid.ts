@@ -1,10 +1,12 @@
-import tgpu from 'typegpu'
-import { hexToRgb, ZERO_LATENT } from '../lib/mixbox'
+import { ZERO_LATENT } from '../lib/mixbox'
 import type { BrushInput, SimulationMetrics, SimulationStatus } from './types'
 
 const WORKGROUP_SIZE = 8
 const BRUSH_FLOAT_COUNT = 44
-const BRUSH_UNIFORM_SIZE = BRUSH_FLOAT_COUNT * 4
+const BRUSH_VEC4_COUNT = Math.ceil(BRUSH_FLOAT_COUNT / 4)
+const BRUSH_UNIFORM_SIZE = BRUSH_VEC4_COUNT * 16
+const BRUSH_FLOW = 0.18
+const DIFFUSION_STRENGTH = 0.12
 
 interface PingPongTexture {
   label: string
@@ -54,7 +56,6 @@ export class FluidSimulation {
   private context: GPUCanvasContext | null = null
   private device: GPUDevice | null = null
   private queue: GPUQueue | null = null
-  private root: Awaited<ReturnType<typeof tgpu.initFromDevice>> | null = null
   private sampler: GPUSampler | null = null
   private presentationFormat: GPUTextureFormat = 'bgra8unorm'
   private dpr = window.devicePixelRatio || 1
@@ -62,28 +63,21 @@ export class FluidSimulation {
   private animationHandle: number | null = null
   private brushUniformBuffer: GPUBuffer | null = null
   private brushUniformData = new Float32Array(BRUSH_FLOAT_COUNT)
-  private pigmentTextures: PingPongTexture | null = null
+  private latent0Textures: PingPongTexture | null = null
+  private latent1Textures: PingPongTexture | null = null
   private computeLayout: GPUBindGroupLayout | null = null
   private pipelines: {
-    forces?: GPUComputePipeline
-    advection?: GPUComputePipeline
-    diffusion?: GPUComputePipeline
-    pressure?: GPUComputePipeline
-    pigment?: GPUComputePipeline
+    paint?: GPUComputePipeline
+    diffuse?: GPUComputePipeline
+    clear?: GPUComputePipeline
     render?: GPURenderPipeline
   } = {}
   private size = { width: 0, height: 0 }
   private pointer: PointerSnapshot = { x: 0.5, y: 0.5, prevX: 0.5, prevY: 0.5, active: false }
   private brushState: BrushInput = {
-    hexA: '#ffffff',
-    hexB: '#ffffff',
-    ratio: 50,
-    activeSlot: 'A',
-    latentA: ZERO_LATENT,
-    latentB: ZERO_LATENT,
+    latent: ZERO_LATENT,
   }
   private lastTimestamp = 0
-  private paused = false
   private frameTimeSamples: number[] = []
   private readonly FPS_SAMPLE_SIZE = 60
 
@@ -107,7 +101,6 @@ export class FluidSimulation {
       const device = await adapter.requestDevice()
       this.device = device
       this.queue = device.queue
-      this.root = tgpu.initFromDevice({ device })
       this.presentationFormat = navigator.gpu.getPreferredCanvasFormat()
 
       const context = this.canvas.getContext('webgpu')
@@ -136,22 +129,16 @@ export class FluidSimulation {
     }
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
-    this.pigmentTextures?.front.destroy()
-    this.pigmentTextures?.back.destroy()
+    this.latent0Textures?.front.destroy()
+    this.latent0Textures?.back.destroy()
+    this.latent1Textures?.front.destroy()
+    this.latent1Textures?.back.destroy()
     this.brushUniformBuffer?.destroy()
-    this.root?.destroy()
-  }
-
-  setPaused(paused: boolean) {
-    this.paused = paused
-    if (!paused) {
-      this.lastTimestamp = 0
-    }
   }
 
   clearSurface() {
     this.pointer = { ...this.pointer, active: false }
-    this.allocateTextures()
+    this.clearTextures()
   }
 
   updateBrushInput(input: BrushInput) {
@@ -219,8 +206,10 @@ export class FluidSimulation {
 
   private allocateTextures() {
     if (!this.device || this.size.width === 0 || this.size.height === 0) return
-    this.pigmentTextures?.front.destroy()
-    this.pigmentTextures?.back.destroy()
+    this.latent0Textures?.front.destroy()
+    this.latent0Textures?.back.destroy()
+    this.latent1Textures?.front.destroy()
+    this.latent1Textures?.back.destroy()
 
     const usage =
       GPUTextureUsage.TEXTURE_BINDING |
@@ -228,13 +217,65 @@ export class FluidSimulation {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.STORAGE_BINDING
 
-    this.pigmentTextures = {
-      label: 'pigment-density',
+    this.latent0Textures = {
+      label: 'latent0',
       format: 'rgba16float',
       usage,
-      front: createTexture(this.device, 'pigment-front', 'rgba16float', usage, this.size.width, this.size.height),
-      back: createTexture(this.device, 'pigment-back', 'rgba16float', usage, this.size.width, this.size.height),
+      front: createTexture(this.device, 'latent0-front', 'rgba16float', usage, this.size.width, this.size.height),
+      back: createTexture(this.device, 'latent0-back', 'rgba16float', usage, this.size.width, this.size.height),
     }
+    this.latent1Textures = {
+      label: 'latent1',
+      format: 'rgba16float',
+      usage,
+      front: createTexture(this.device, 'latent1-front', 'rgba16float', usage, this.size.width, this.size.height),
+      back: createTexture(this.device, 'latent1-back', 'rgba16float', usage, this.size.width, this.size.height),
+    }
+
+    this.clearTextures()
+  }
+
+  private clearTextures() {
+    if (
+      !this.device ||
+      !this.queue ||
+      !this.latent0Textures ||
+      !this.latent1Textures ||
+      !this.computeLayout ||
+      !this.brushUniformBuffer ||
+      !this.sampler ||
+      !this.pipelines.clear
+    ) {
+      return
+    }
+
+    const encoder = this.device.createCommandEncoder({ label: 'pigment-clear' })
+    const runClear = () => {
+      const bindGroup = this.device!.createBindGroup({
+        layout: this.computeLayout!,
+        entries: [
+          { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
+          { binding: 1, resource: this.sampler! },
+          { binding: 2, resource: this.latent0Textures!.front.createView() },
+          { binding: 3, resource: this.latent0Textures!.back.createView() },
+          { binding: 4, resource: this.latent1Textures!.front.createView() },
+          { binding: 5, resource: this.latent1Textures!.back.createView() },
+        ],
+      })
+      const pass = encoder.beginComputePass({ label: 'pigment-clear-pass' })
+      pass.setPipeline(this.pipelines.clear!)
+      pass.setBindGroup(0, bindGroup)
+      const workgroupX = Math.ceil(this.size.width / WORKGROUP_SIZE)
+      const workgroupY = Math.ceil(this.size.height / WORKGROUP_SIZE)
+      pass.dispatchWorkgroups(workgroupX, workgroupY)
+      pass.end()
+      swapPingPong(this.latent0Textures!)
+      swapPingPong(this.latent1Textures!)
+    }
+
+    runClear()
+    runClear()
+    this.queue.submit([encoder.finish()])
   }
 
   private createResources() {
@@ -262,15 +303,21 @@ export class FluidSimulation {
           visibility: GPUShaderStage.COMPUTE,
           storageTexture: { access: 'write-only', format: 'rgba16float' },
         },
+        { binding: 4, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
+        {
+          binding: 5,
+          visibility: GPUShaderStage.COMPUTE,
+          storageTexture: { access: 'write-only', format: 'rgba16float' },
+        },
       ],
     })
 
-    this.pipelines.forces = this.createComputePipeline('forces', this.getForcesShader())
-    this.pipelines.advection = this.createComputePipeline('advection', this.getAdvectionShader())
-    this.pipelines.diffusion = this.createComputePipeline('diffusion', this.getDiffusionShader())
-    this.pipelines.pressure = this.createComputePipeline('pressure', this.getPressureShader())
-    this.pipelines.pigment = this.createComputePipeline('pigment-transport', this.getPigmentShader())
+    this.pipelines.paint = this.createComputePipeline('paint', this.getPaintShader())
+    this.pipelines.diffuse = this.createComputePipeline('diffuse', this.getDiffuseShader())
+    this.pipelines.clear = this.createComputePipeline('clear', this.getClearShader())
     this.pipelines.render = this.createRenderPipeline()
+
+    this.clearTextures()
   }
 
   private createComputePipeline(label: string, code: string) {
@@ -289,8 +336,8 @@ export class FluidSimulation {
     if (!this.device) return undefined
     const bindGroupLayout = this.device.createBindGroupLayout({
       entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       ],
     })
@@ -313,18 +360,21 @@ export class FluidSimulation {
 
   private startRenderLoop() {
     const frame = (timestamp: number) => {
-      if (!this.paused) {
-        this.step(timestamp)
-      } else {
-        this.lastTimestamp = timestamp
-      }
+      this.step(timestamp)
       this.animationHandle = requestAnimationFrame(frame)
     }
     this.animationHandle = requestAnimationFrame(frame)
   }
 
   private step(timestamp: number) {
-    if (!this.device || !this.queue || !this.context || !this.pigmentTextures || !this.brushUniformBuffer) {
+    if (
+      !this.device ||
+      !this.queue ||
+      !this.context ||
+      !this.latent0Textures ||
+      !this.latent1Textures ||
+      !this.brushUniformBuffer
+    ) {
       return
     }
 
@@ -336,14 +386,16 @@ export class FluidSimulation {
     const encoder = this.device.createCommandEncoder({ label: 'fluid-simulation-encoder' })
 
     const runPipeline = (pipeline?: GPUComputePipeline) => {
-      if (!pipeline || !this.computeLayout || !this.sampler || !this.pigmentTextures) return
+      if (!pipeline || !this.computeLayout || !this.sampler || !this.latent0Textures || !this.latent1Textures) return
       const bindGroup = this.device!.createBindGroup({
         layout: this.computeLayout,
         entries: [
           { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
           { binding: 1, resource: this.sampler },
-          { binding: 2, resource: this.pigmentTextures!.front.createView() },
-          { binding: 3, resource: this.pigmentTextures!.back.createView() },
+          { binding: 2, resource: this.latent0Textures!.front.createView() },
+          { binding: 3, resource: this.latent0Textures!.back.createView() },
+          { binding: 4, resource: this.latent1Textures!.front.createView() },
+          { binding: 5, resource: this.latent1Textures!.back.createView() },
         ],
       })
 
@@ -354,14 +406,12 @@ export class FluidSimulation {
       const workgroupY = Math.ceil(this.size.height / WORKGROUP_SIZE)
       pass.dispatchWorkgroups(workgroupX, workgroupY)
       pass.end()
-      swapPingPong(this.pigmentTextures!)
+      swapPingPong(this.latent0Textures!)
+      swapPingPong(this.latent1Textures!)
     }
 
-    runPipeline(this.pipelines.forces)
-    runPipeline(this.pipelines.advection)
-    runPipeline(this.pipelines.diffusion)
-    runPipeline(this.pipelines.pressure)
-    runPipeline(this.pipelines.pigment)
+    runPipeline(this.pipelines.paint)
+    runPipeline(this.pipelines.diffuse)
 
     const currentTexture = this.context.getCurrentTexture()
     const view = currentTexture.createView({ label: 'presentation-view' })
@@ -371,9 +421,9 @@ export class FluidSimulation {
       const renderBindGroup = this.device.createBindGroup({
         layout: renderPipeline.getBindGroupLayout(0),
         entries: [
-          { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
-          { binding: 1, resource: this.sampler },
-          { binding: 2, resource: this.pigmentTextures.front.createView() },
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: this.latent0Textures.front.createView() },
+          { binding: 2, resource: this.latent1Textures.front.createView() },
         ],
       })
 
@@ -420,14 +470,9 @@ export class FluidSimulation {
 
     const { width, height } = this.size
     const pointerDown = this.pointer.active ? 1 : 0
-    const ratio = Math.min(1, Math.max(0, this.brushState.ratio / 100))
-    const colorA = hexToRgb(this.brushState.hexA).map((value) => value / 255)
-    const colorB = hexToRgb(this.brushState.hexB).map((value) => value / 255)
-    const activeColor = this.brushState.activeSlot === 'A' ? colorA : colorB
-    const latentA = this.brushState.latentA
-    const latentB = this.brushState.latentB
+    const latent = this.brushState.latent
 
-    const brushRadius = 0.2 * Math.min(width || 1, height || 1)
+    const brushRadius = 0.06 * Math.min(width || 1, height || 1)
 
     const data = this.brushUniformData
     data[0] = width
@@ -440,8 +485,8 @@ export class FluidSimulation {
     data[6] = pointerDown
     data[7] = brushRadius
 
-    data[8] = ratio
-    data[9] = this.brushState.activeSlot === 'A' ? 0 : 1
+    data[8] = BRUSH_FLOW
+    data[9] = DIFFUSION_STRENGTH
     data[10] = timestamp * 0.001
     data[11] = 0
 
@@ -450,39 +495,39 @@ export class FluidSimulation {
     data[14] = 0
     data[15] = 0
 
-    data[16] = colorA[0]
-    data[17] = colorA[1]
-    data[18] = colorA[2]
-    data[19] = 1
+    data[16] = 0
+    data[17] = 0
+    data[18] = 0
+    data[19] = 0
 
-    data[20] = colorB[0]
-    data[21] = colorB[1]
-    data[22] = colorB[2]
-    data[23] = 1
+    data[20] = 0
+    data[21] = 0
+    data[22] = 0
+    data[23] = 0
 
-    data[24] = activeColor[0]
-    data[25] = activeColor[1]
-    data[26] = activeColor[2]
-    data[27] = 1
+    data[24] = 0
+    data[25] = 0
+    data[26] = 0
+    data[27] = 0
 
-    data[28] = latentA[0]
-    data[29] = latentA[1]
-    data[30] = latentA[2]
-    data[31] = latentA[3]
+    data[28] = latent[0]
+    data[29] = latent[1]
+    data[30] = latent[2]
+    data[31] = latent[3]
 
-    data[32] = latentA[4]
-    data[33] = latentA[5]
-    data[34] = latentA[6]
+    data[32] = latent[4]
+    data[33] = latent[5]
+    data[34] = latent[6]
     data[35] = 0
 
-    data[36] = latentB[0]
-    data[37] = latentB[1]
-    data[38] = latentB[2]
-    data[39] = latentB[3]
+    data[36] = 0
+    data[37] = 0
+    data[38] = 0
+    data[39] = 0
 
-    data[40] = latentB[4]
-    data[41] = latentB[5]
-    data[42] = latentB[6]
+    data[40] = 0
+    data[41] = 0
+    data[42] = 0
     data[43] = 0
 
     this.queue.writeBuffer(this.brushUniformBuffer, 0, data)
@@ -494,28 +539,36 @@ export class FluidSimulation {
 
   private getCommonShaderHeader() {
     return /* wgsl */ `
-const BRUSH_FLOAT_COUNT : u32 = ${BRUSH_FLOAT_COUNT}u;
+const BRUSH_VEC4_COUNT : u32 = ${BRUSH_VEC4_COUNT}u;
 
-@group(0) @binding(0) var<uniform> brush : array<f32, BRUSH_FLOAT_COUNT>;
+@group(0) @binding(0) var<uniform> brush : array<vec4<f32>, BRUSH_VEC4_COUNT>;
 @group(0) @binding(1) var linearSampler : sampler;
-@group(0) @binding(2) var pigmentSrc : texture_2d<f32>;
-@group(0) @binding(3) var pigmentDst : texture_storage_2d<rgba16float, write>;
+@group(0) @binding(2) var latent0Src : texture_2d<f32>;
+@group(0) @binding(3) var latent0Dst : texture_storage_2d<rgba16float, write>;
+@group(0) @binding(4) var latent1Src : texture_2d<f32>;
+@group(0) @binding(5) var latent1Dst : texture_storage_2d<rgba16float, write>;
+
+fn readScalar(offset : u32) -> f32 {
+  let vecIndex = offset / 4u;
+  let lane = offset % 4u;
+  let v = brush[vecIndex];
+  if (lane == 0u) { return v.x; }
+  if (lane == 1u) { return v.y; }
+  if (lane == 2u) { return v.z; }
+  return v.w;
+}
 
 fn readVec2(offset : u32) -> vec2<f32> {
-  return vec2<f32>(brush[offset], brush[offset + 1u]);
+  return vec2<f32>(readScalar(offset), readScalar(offset + 1u));
 }
 
 fn readVec4(offset : u32) -> vec4<f32> {
   return vec4<f32>(
-    brush[offset],
-    brush[offset + 1u],
-    brush[offset + 2u],
-    brush[offset + 3u]
+    readScalar(offset),
+    readScalar(offset + 1u),
+    readScalar(offset + 2u),
+    readScalar(offset + 3u)
   );
-}
-
-fn readScalar(offset : u32) -> f32 {
-  return brush[offset];
 }
 
 fn inBounds(coord: vec2<u32>, dims: vec2<u32>) -> bool {
@@ -528,98 +581,83 @@ fn texelUv(coord: vec2<u32>, dims: vec2<u32>) -> vec2<f32> {
 `
   }
 
-  private getForcesShader() {
+  private getPaintShader() {
     return `${this.getCommonShaderHeader()}
 @compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let dims = textureDimensions(pigmentDst);
+  let dims = textureDimensions(latent0Dst);
   if (!inBounds(gid.xy, dims)) { return; }
   let uv = texelUv(gid.xy, dims);
-  var texel = textureSampleLevel(pigmentSrc, linearSampler, uv, 0.0);
+  var latent0 = textureSampleLevel(latent0Src, linearSampler, uv, 0.0);
+  var latent1 = textureSampleLevel(latent1Src, linearSampler, uv, 0.0);
   let resolution = readVec2(0u);
   let pointer = readVec2(2u);
-  let meta = readVec4(6u);
-  if (meta.x > 0.5) {
+  let brushMeta = readVec4(6u);
+  let flow = clamp(brushMeta.z, 0.0, 1.0);
+  if (brushMeta.x > 0.5) {
     let pointerUv = pointer / resolution;
     let diff = (uv - pointerUv) * resolution;
     let dist = length(diff);
-    let influence = max(0.0, 1.0 - dist / meta.y);
-    let colorA = readVec4(16u).rgb;
-    let colorB = readVec4(20u).rgb;
-    let pigmentRatio = meta.z;
-    texel.rgb = texel.rgb + (mix(colorB, colorA, pigmentRatio) - texel.rgb) * influence;
-    texel.a = max(texel.a, influence);
+    let falloff = max(0.0, 1.0 - dist / max(1.0, brushMeta.y));
+    let influence = falloff * falloff;
+    let deposit = influence * 0.35 * flow;
+    let pigment0 = readVec4(28u);
+    let pigment1 = readVec4(32u);
+    latent0 = latent0 + pigment0 * deposit;
+    latent1 = vec4<f32>(latent1.xyz + pigment1.xyz * deposit, latent1.w + deposit);
   }
-  textureStore(pigmentDst, vec2<i32>(gid.xy), texel);
+  textureStore(latent0Dst, vec2<i32>(gid.xy), latent0);
+  textureStore(latent1Dst, vec2<i32>(gid.xy), latent1);
 }`
   }
 
-  private getAdvectionShader() {
+  private getDiffuseShader() {
     return `${this.getCommonShaderHeader()}
 @compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let dims = textureDimensions(pigmentDst);
-  if (!inBounds(gid.xy, dims)) { return; }
-  let uv = texelUv(gid.xy, dims);
-  let timeValue = readScalar(10u);
-  let velocity = vec2<f32>(sin(timeValue * 0.05), cos(timeValue * 0.05)) * 0.0025;
-  let sampleUv = clamp(uv - velocity, vec2<f32>(0.0), vec2<f32>(1.0));
-  let texel = textureSampleLevel(pigmentSrc, linearSampler, sampleUv, 0.0);
-  textureStore(pigmentDst, vec2<i32>(gid.xy), texel);
-}`
-  }
-
-  private getDiffusionShader() {
-    return `${this.getCommonShaderHeader()}
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let dims = textureDimensions(pigmentDst);
+  let dims = textureDimensions(latent0Dst);
   if (!inBounds(gid.xy, dims)) { return; }
   let texSize = vec2<f32>(dims);
   let uv = texelUv(gid.xy, dims);
   let offset = 1.0 / texSize;
-  var sum = vec4<f32>(0.0);
-  sum += textureSampleLevel(pigmentSrc, linearSampler, uv, 0.0);
-  sum += textureSampleLevel(pigmentSrc, linearSampler, uv + vec2<f32>( offset.x, 0.0), 0.0);
-  sum += textureSampleLevel(pigmentSrc, linearSampler, uv + vec2<f32>(-offset.x, 0.0), 0.0);
-  sum += textureSampleLevel(pigmentSrc, linearSampler, uv + vec2<f32>(0.0,  offset.y), 0.0);
-  sum += textureSampleLevel(pigmentSrc, linearSampler, uv + vec2<f32>(0.0, -offset.y), 0.0);
-  textureStore(pigmentDst, vec2<i32>(gid.xy), sum / 5.0);
+  let diffusion = clamp(readScalar(9u), 0.0, 1.0);
+  let center0 = textureSampleLevel(latent0Src, linearSampler, uv, 0.0);
+  let center1 = textureSampleLevel(latent1Src, linearSampler, uv, 0.0);
+  var sum0 = center0;
+  var sum1 = center1;
+  sum0 += textureSampleLevel(latent0Src, linearSampler, uv + vec2<f32>( offset.x, 0.0), 0.0);
+  sum1 += textureSampleLevel(latent1Src, linearSampler, uv + vec2<f32>( offset.x, 0.0), 0.0);
+  sum0 += textureSampleLevel(latent0Src, linearSampler, uv + vec2<f32>(-offset.x, 0.0), 0.0);
+  sum1 += textureSampleLevel(latent1Src, linearSampler, uv + vec2<f32>(-offset.x, 0.0), 0.0);
+  sum0 += textureSampleLevel(latent0Src, linearSampler, uv + vec2<f32>(0.0,  offset.y), 0.0);
+  sum1 += textureSampleLevel(latent1Src, linearSampler, uv + vec2<f32>(0.0,  offset.y), 0.0);
+  sum0 += textureSampleLevel(latent0Src, linearSampler, uv + vec2<f32>(0.0, -offset.y), 0.0);
+  sum1 += textureSampleLevel(latent1Src, linearSampler, uv + vec2<f32>(0.0, -offset.y), 0.0);
+  let blur0 = sum0 / 5.0;
+  let blur1 = sum1 / 5.0;
+  let latent0 = mix(center0, blur0, diffusion);
+  let latent1 = mix(center1, blur1, diffusion);
+  textureStore(latent0Dst, vec2<i32>(gid.xy), latent0);
+  textureStore(latent1Dst, vec2<i32>(gid.xy), latent1);
 }`
   }
 
-  private getPressureShader() {
+  private getClearShader() {
     return `${this.getCommonShaderHeader()}
 @compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let dims = textureDimensions(pigmentDst);
+  let dims = textureDimensions(latent0Dst);
   if (!inBounds(gid.xy, dims)) { return; }
-  let uv = texelUv(gid.xy, dims);
-  var texel = textureSampleLevel(pigmentSrc, linearSampler, uv, 0.0);
-  texel.rg *= 0.997;
-  texel.a *= 0.99;
-  textureStore(pigmentDst, vec2<i32>(gid.xy), texel);
-}`
-  }
-
-  private getPigmentShader() {
-    return `${this.getCommonShaderHeader()}
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
-  let dims = textureDimensions(pigmentDst);
-  if (!inBounds(gid.xy, dims)) { return; }
-  let uv = texelUv(gid.xy, dims);
-  var texel = textureSampleLevel(pigmentSrc, linearSampler, uv, 0.0);
-  texel.b = 0.0;
-  textureStore(pigmentDst, vec2<i32>(gid.xy), texel);
+  textureStore(latent0Dst, vec2<i32>(gid.xy), vec4<f32>(0.0));
+  textureStore(latent1Dst, vec2<i32>(gid.xy), vec4<f32>(0.0));
 }`
   }
 
   private getRenderVertexShader() {
     return /* wgsl */ `
 struct VSOut {
-  @builtin(position) position : vec4<f32>;
-  @location(0) uv : vec2<f32>;
+  @builtin(position) position : vec4<f32>,
+  @location(0) uv : vec2<f32>,
 };
 
 @vertex fn main(@builtin(vertex_index) vertexIndex : u32) -> VSOut {
@@ -642,20 +680,9 @@ struct VSOut {
 
   private getRenderFragmentShader() {
     return /* wgsl */ `
-const BRUSH_FLOAT_COUNT : u32 = ${BRUSH_FLOAT_COUNT}u;
-
-@group(0) @binding(0) var<uniform> brush : array<f32, BRUSH_FLOAT_COUNT>;
-@group(0) @binding(1) var linearSampler : sampler;
-@group(0) @binding(2) var pigmentTexture : texture_2d<f32>;
-
-fn readVec4(offset : u32) -> vec4<f32> {
-  return vec4<f32>(
-    brush[offset],
-    brush[offset + 1u],
-    brush[offset + 2u],
-    brush[offset + 3u]
-  );
-}
+@group(0) @binding(0) var linearSampler : sampler;
+@group(0) @binding(1) var latent0Texture : texture_2d<f32>;
+@group(0) @binding(2) var latent1Texture : texture_2d<f32>;
 
 fn evalPolynomial(c0: f32, c1: f32, c2: f32, c3: f32) -> vec3<f32> {
   let c00 = c0 * c0;
@@ -671,26 +698,26 @@ fn evalPolynomial(c0: f32, c1: f32, c2: f32, c3: f32) -> vec3<f32> {
   var b = 0.0;
 
   var w = 0.0;
-  w = c0*c00; r += +0.07717053*w; g += +0.02826978*w; b += +0.24832992*w;
-  w = c1*c11; r += +0.95912302*w; g += +0.80256528*w; b += +0.03561839*w;
-  w = c2*c22; r += +0.74683774*w; g += +0.04868586*w; b += +0.00000000*w;
-  w = c3*c33; r += +0.99518138*w; g += +0.99978149*w; b += +0.99704802*w;
-  w = c00*c1; r += +0.04819146*w; g += +0.83363781*w; b += +0.32515377*w;
-  w = c01*c1; r += -0.68146950*w; g += +1.46107803*w; b += +1.06980936*w;
-  w = c00*c2; r += +0.27058419*w; g += -0.15324870*w; b += +1.98735057*w;
-  w = c02*c2; r += +0.80478189*w; g += +0.67093710*w; b += +0.18424500*w;
-  w = c00*c3; r += -0.35031003*w; g += +1.37855826*w; b += +3.68865000*w;
-  w = c0*c33; r += +1.05128046*w; g += +1.97815239*w; b += +2.82989073*w;
-  w = c11*c2; r += +3.21607125*w; g += +0.81270228*w; b += +1.03384539*w;
-  w = c1*c22; r += +2.78893374*w; g += +0.41565549*w; b += -0.04487295*w;
-  w = c11*c3; r += +3.02162577*w; g += +2.55374103*w; b += +0.32766114*w;
-  w = c1*c33; r += +2.95124691*w; g += +2.81201112*w; b += +1.17578442*w;
-  w = c22*c3; r += +2.82677043*w; g += +0.79933038*w; b += +1.81715262*w;
-  w = c2*c33; r += +2.99691099*w; g += +1.22593053*w; b += +1.80653661*w;
-  w = c01*c2; r += +1.87394106*w; g += +2.05027182*w; b += -0.29835996*w;
-  w = c01*c3; r += +2.56609566*w; g += +7.03428198*w; b += +0.62575374*w;
-  w = c02*c3; r += +4.08329484*w; g += -1.40408358*w; b += +2.14995522*w;
-  w = c12*c3; r += +6.00078678*w; g += +2.55552042*w; b += +1.90739502*w;
+  w = c0 * c00; r += 0.07717053 * w; g += 0.02826978 * w; b += 0.24832992 * w;
+  w = c1 * c11; r += 0.95912302 * w; g += 0.80256528 * w; b += 0.03561839 * w;
+  w = c2 * c22; r += 0.74683774 * w; g += 0.04868586 * w; b += 0.00000000 * w;
+  w = c3 * c33; r += 0.99518138 * w; g += 0.99978149 * w; b += 0.99704802 * w;
+  w = c00 * c1; r += 0.04819146 * w; g += 0.83363781 * w; b += 0.32515377 * w;
+  w = c01 * c1; r += -0.68146950 * w; g += 1.46107803 * w; b += 1.06980936 * w;
+  w = c00 * c2; r += 0.27058419 * w; g += -0.15324870 * w; b += 1.98735057 * w;
+  w = c02 * c2; r += 0.80478189 * w; g += 0.67093710 * w; b += 0.18424500 * w;
+  w = c00 * c3; r += -0.35031003 * w; g += 1.37855826 * w; b += 3.68865000 * w;
+  w = c0 * c33; r += 1.05128046 * w; g += 1.97815239 * w; b += 2.82989073 * w;
+  w = c11 * c2; r += 3.21607125 * w; g += 0.81270228 * w; b += 1.03384539 * w;
+  w = c1 * c22; r += 2.78893374 * w; g += 0.41565549 * w; b += -0.04487295 * w;
+  w = c11 * c3; r += 3.02162577 * w; g += 2.55374103 * w; b += 0.32766114 * w;
+  w = c1 * c33; r += 2.95124691 * w; g += 2.81201112 * w; b += 1.17578442 * w;
+  w = c22 * c3; r += 2.82677043 * w; g += 0.79933038 * w; b += 1.81715262 * w;
+  w = c2 * c33; r += 2.99691099 * w; g += 1.22593053 * w; b += 1.80653661 * w;
+  w = c01 * c2; r += 1.87394106 * w; g += 2.05027182 * w; b += -0.29835996 * w;
+  w = c01 * c3; r += 2.56609566 * w; g += 7.03428198 * w; b += 0.62575374 * w;
+  w = c02 * c3; r += 4.08329484 * w; g += -1.40408358 * w; b += 2.14995522 * w;
+  w = c12 * c3; r += 6.00078678 * w; g += 2.55552042 * w; b += 1.90739502 * w;
 
   return vec3<f32>(r, g, b);
 }
@@ -701,24 +728,18 @@ fn latentToColor(latent0: vec4<f32>, latent1: vec4<f32>) -> vec3<f32> {
   return clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
-fn mixLatent(t: f32) -> vec3<f32> {
-  let latentB0 = readVec4(36u);
-  let latentB1 = readVec4(40u);
-  let latentA0 = readVec4(28u);
-  let latentA1 = readVec4(32u);
-  let latent0 = mix(latentB0, latentA0, t);
-  let latent1 = mix(latentB1, latentA1, t);
-  return latentToColor(latent0, latent1);
-}
-
 @fragment fn main(@location(0) uv : vec2<f32>) -> @location(0) vec4<f32> {
-  let texel = textureSampleLevel(pigmentTexture, linearSampler, uv, 0.0);
-  let total = texel.r + texel.g;
-  if (total <= 1e-5) {
+  let latent0 = textureSampleLevel(latent0Texture, linearSampler, uv, 0.0);
+  let latent1 = textureSampleLevel(latent1Texture, linearSampler, uv, 0.0);
+  let weight = latent1.w;
+  if (weight <= 1e-5) {
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
   }
-  let ratio = clamp(texel.r / total, 0.0, 1.0);
-  let color = mixLatent(ratio) * clamp(total, 0.0, 1.0);
+  let invWeight = 1.0 / weight;
+  let avgLatent0 = latent0 * invWeight;
+  let avgLatent1 = vec4<f32>(latent1.xyz * invWeight, 0.0);
+  let coverage = clamp(weight, 0.0, 1.0);
+  let color = latentToColor(avgLatent0, avgLatent1) * coverage;
   return vec4<f32>(color, 1.0);
 }`
   }

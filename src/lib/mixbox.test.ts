@@ -19,8 +19,8 @@ describe('hexToRgb', () => {
 })
 
 describe('mixPigmentPair', () => {
-  const yellow = getPigment('cadmium-yellow')
-  const blue = getPigment('ultramarine-blue')
+  const yellow = getPigment('primary-yellow')
+  const blue = getPigment('primary-blue')
 
   it('returns null if either pigment is missing', () => {
     expect(mixPigmentPair(yellow, null, 50)).toBeNull()
@@ -29,12 +29,12 @@ describe('mixPigmentPair', () => {
 
   it('returns pigment B when ratio favors it completely', () => {
     const result = mixPigmentPair(yellow, blue, 0)
-    expect(result?.hex).toBe('#190059')
+    expect(result?.hex).toBe('#235CFF')
   })
 
   it('leans toward pigment A as the ratio increases', () => {
     const result = mixPigmentPair(yellow, blue, 100)
-    expect(result?.hex).toBe('#FEEC00')
+    expect(result?.hex).toBe('#FFE300')
   })
 
   it('produces a greenish tint for equal parts yellow and blue', () => {

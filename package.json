@@ -30,6 +30,7 @@
   "dependencies": {
     "mixbox": "^2.0.0",
     "react": "^19.2.0",
+    "react-colorful": "^5.6.1",
     "react-dom": "^19.2.0",
     "typegpu": "^0.8.2"
   }

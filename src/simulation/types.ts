@@ -3,12 +3,7 @@ import type { PigmentLatent } from '../lib/mixbox'
 export type SimulationStatus = 'idle' | 'initializing' | 'ready' | 'error'
 
 export interface BrushInput {
-  hexA: string
-  hexB: string
-  ratio: number // 0-100
-  activeSlot: 'A' | 'B'
-  latentA: PigmentLatent
-  latentB: PigmentLatent
+  latent: PigmentLatent
 }
 
 export interface PointerState {

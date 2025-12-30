@@ -1,84 +1,72 @@
-import type {
-  PigmentPreset,
-  PigmentSelectionState,
-  PigmentSlot,
-} from '../lib/pigments'
-import { pigmentSlots } from '../lib/pigments'
-import { PigmentSlotSelector } from './PigmentSlotSelector'
-import { PigmentRatioSlider } from './PigmentRatioSlider'
-import { SelectedPigmentsPanel } from './SelectedPigmentsPanel'
-import type { PigmentMixResult } from '../lib/mixbox'
-import { PigmentMixPreview } from './PigmentMixPreview'
+import { HexColorInput, HexColorPicker } from 'react-colorful'
+import type { PigmentPreset } from '../lib/pigments'
 
 export interface PigmentControlsProps {
   palette: PigmentPreset[]
-  pigments: PigmentSelectionState
-  activeSlot: PigmentSlot
-  ratio: number
-  mixResult: PigmentMixResult | null
-  onSelectPigment: (slot: PigmentSlot, pigment: PigmentPreset) => void
-  onSetActiveSlot: (slot: PigmentSlot) => void
-  onRemovePigment: (slot: PigmentSlot) => void
-  onSwapPigments: () => void
-  onUpdateRatio: (ratio: number) => void
+  pigment: PigmentPreset
+  customPigment: PigmentPreset
+  onSelectPigment: (pigment: PigmentPreset) => void
+  onCustomColorChange: (hex: string) => void
 }
 
 export function PigmentControls({
   palette,
-  pigments,
-  activeSlot,
-  ratio,
-  mixResult,
+  pigment,
+  customPigment,
   onSelectPigment,
-  onSetActiveSlot,
-  onRemovePigment,
-  onSwapPigments,
-  onUpdateRatio,
+  onCustomColorChange,
 }: PigmentControlsProps) {
-  const ratioDisabled = !pigments.A || !pigments.B
+  const pigmentId = pigment?.id ?? ''
+  const isCustomActive = pigmentId === customPigment.id
+  const handleCustomChange = (next: string) => {
+    onCustomColorChange(next)
+    onSelectPigment(customPigment)
+  }
 
   return (
-    <section className="pigment-controls">
-      <header>
-        <p className="eyebrow">Phase 2 · Pigment Selection</p>
-        <h2>Choose your pigments</h2>
-        <p className="lede">
-          Pick two pigments, decide which one the brush uses, and tune their blend ratio. These controls will later
-          influence the Mixbox preview and the WebGPU brush injection.
-        </p>
-      </header>
-
-      <div className="pigment-controls__slots">
-        {pigmentSlots.map((slot) => (
-          <PigmentSlotSelector
-            key={slot}
-            slot={slot}
-            palette={palette}
-            selectedPigment={pigments[slot]}
-            isActive={activeSlot === slot}
-            onSelect={onSelectPigment}
-            onSetActive={onSetActiveSlot}
-          />
-        ))}
+    <div className="pigment-controls">
+      <p className="control-label">Pigment</p>
+      <div className="swatch-row" role="list">
+        {palette.map((item) => {
+          const isActive = item.id === pigmentId
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="listitem"
+              className={`swatch-button ${isActive ? 'is-active' : ''}`}
+              aria-pressed={isActive}
+              aria-label={item.name}
+              title={item.name}
+              onClick={() => onSelectPigment(item)}
+            >
+              <span className="swatch" style={{ backgroundColor: item.hex }} />
+            </button>
+          )
+        })}
       </div>
 
-      <PigmentRatioSlider
-        value={ratio}
-        onChange={onUpdateRatio}
-        disabled={ratioDisabled}
-        pigmentA={pigments.A}
-        pigmentB={pigments.B}
-      />
-
-      <SelectedPigmentsPanel
-        pigments={pigments}
-        activeSlot={activeSlot}
-        onSetActive={onSetActiveSlot}
-        onRemove={onRemovePigment}
-        onSwap={onSwapPigments}
-      />
-
-      <PigmentMixPreview pigments={pigments} mixResult={mixResult} />
-    </section>
+      <div className="custom-row">
+        <HexColorPicker color={customPigment.hex} onChange={handleCustomChange} />
+        <div className="custom-inputs">
+          <HexColorInput
+            className="custom-input"
+            color={customPigment.hex}
+            onChange={handleCustomChange}
+            prefixed
+            aria-label="Custom pigment hex"
+            placeholder="#RRGGBB"
+          />
+          <button
+            type="button"
+            className={`custom-preview ${isCustomActive ? 'is-active' : ''}`}
+            style={{ backgroundColor: customPigment.hex }}
+            aria-label="Use custom pigment"
+            title="Use custom pigment"
+            onClick={() => onSelectPigment(customPigment)}
+          />
+        </div>
+      </div>
+    </div>
   )
 }
