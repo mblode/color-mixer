@@ -2,7 +2,7 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
   background-color: #f5f1ea;
   color: #1c1a16;
   --bg: #f5f1ea;
@@ -26,8 +26,11 @@ body,
 
 body {
   background:
-    radial-gradient(circle at 15% 15%, rgba(255, 237, 219, 0.6), transparent 40%),
-    linear-gradient(140deg, #f9f4ee 0%, #f2ece4 65%);
+    radial-gradient(
+      circle at 15% 15%,
+      rgba(255, 237, 219, 0.6),
+      transparent 40%
+    ), linear-gradient(140deg, #f9f4ee 0%, #f2ece4 65%);
   color: var(--text);
 }
 
@@ -97,7 +100,9 @@ a:hover {
   padding: 0.25rem;
   border-radius: 0.55rem;
   cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .swatch-button.is-active {

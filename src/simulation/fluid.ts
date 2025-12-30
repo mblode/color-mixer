@@ -1,32 +1,32 @@
-import { ZERO_LATENT } from '../lib/mixbox'
-import type { BrushInput, SimulationMetrics, SimulationStatus } from './types'
+import { ZERO_LATENT } from "../lib/mixbox";
+import type { BrushInput, SimulationMetrics, SimulationStatus } from "./types";
 
-const WORKGROUP_SIZE = 8
-const BRUSH_FLOAT_COUNT = 44
-const BRUSH_VEC4_COUNT = Math.ceil(BRUSH_FLOAT_COUNT / 4)
-const BRUSH_UNIFORM_SIZE = BRUSH_VEC4_COUNT * 16
-const BRUSH_FLOW = 0.18
-const DIFFUSION_STRENGTH = 0.12
+const WORKGROUP_SIZE = 8;
+const BRUSH_FLOAT_COUNT = 44;
+const BRUSH_VEC4_COUNT = Math.ceil(BRUSH_FLOAT_COUNT / 4);
+const BRUSH_UNIFORM_SIZE = BRUSH_VEC4_COUNT * 16;
+const BRUSH_FLOW = 0.18;
+const DIFFUSION_STRENGTH = 0.12;
 
 interface PingPongTexture {
-  label: string
-  format: GPUTextureFormat
-  usage: GPUTextureUsageFlags
-  front: GPUTexture
-  back: GPUTexture
+  label: string;
+  format: GPUTextureFormat;
+  usage: GPUTextureUsageFlags;
+  front: GPUTexture;
+  back: GPUTexture;
 }
 
 interface SimulationCallbacks {
-  onStatusChange?: (status: SimulationStatus, detail?: string) => void
-  onMetrics?: (metrics: SimulationMetrics) => void
+  onStatusChange?: (status: SimulationStatus, detail?: string) => void;
+  onMetrics?: (metrics: SimulationMetrics) => void;
 }
 
 interface PointerSnapshot {
-  x: number
-  y: number
-  prevX: number
-  prevY: number
-  active: boolean
+  x: number;
+  y: number;
+  prevX: number;
+  prevY: number;
+  active: boolean;
 }
 
 const createTexture = (
@@ -35,388 +35,514 @@ const createTexture = (
   format: GPUTextureFormat,
   usage: GPUTextureUsageFlags,
   width: number,
-  height: number,
+  height: number
 ) =>
   device.createTexture({
     label,
     format,
     size: [Math.max(1, width), Math.max(1, height), 1],
     usage,
-  })
+  });
 
 const swapPingPong = (pair: PingPongTexture) => {
-  const temp = pair.front
-  pair.front = pair.back
-  pair.back = temp
-}
+  const temp = pair.front;
+  pair.front = pair.back;
+  pair.back = temp;
+};
 
 export class FluidSimulation {
-  private canvas: HTMLCanvasElement
-  private callbacks: SimulationCallbacks
-  private context: GPUCanvasContext | null = null
-  private device: GPUDevice | null = null
-  private queue: GPUQueue | null = null
-  private sampler: GPUSampler | null = null
-  private presentationFormat: GPUTextureFormat = 'bgra8unorm'
-  private dpr = window.devicePixelRatio || 1
-  private resizeObserver: ResizeObserver | null = null
-  private animationHandle: number | null = null
-  private brushUniformBuffer: GPUBuffer | null = null
-  private brushUniformData = new Float32Array(BRUSH_FLOAT_COUNT)
-  private latent0Textures: PingPongTexture | null = null
-  private latent1Textures: PingPongTexture | null = null
-  private computeLayout: GPUBindGroupLayout | null = null
-  private pipelines: {
-    paint?: GPUComputePipeline
-    diffuse?: GPUComputePipeline
-    clear?: GPUComputePipeline
-    render?: GPURenderPipeline
-  } = {}
-  private size = { width: 0, height: 0 }
-  private pointer: PointerSnapshot = { x: 0.5, y: 0.5, prevX: 0.5, prevY: 0.5, active: false }
+  private readonly canvas: HTMLCanvasElement;
+  private readonly callbacks: SimulationCallbacks;
+  private context: GPUCanvasContext | null = null;
+  private device: GPUDevice | null = null;
+  private queue: GPUQueue | null = null;
+  private sampler: GPUSampler | null = null;
+  private presentationFormat: GPUTextureFormat = "bgra8unorm";
+  private dpr = window.devicePixelRatio || 1;
+  private resizeObserver: ResizeObserver | null = null;
+  private animationHandle: number | null = null;
+  private brushUniformBuffer: GPUBuffer | null = null;
+  private readonly brushUniformData = new Float32Array(BRUSH_FLOAT_COUNT);
+  private latent0Textures: PingPongTexture | null = null;
+  private latent1Textures: PingPongTexture | null = null;
+  private computeLayout: GPUBindGroupLayout | null = null;
+  private readonly pipelines: {
+    paint?: GPUComputePipeline;
+    diffuse?: GPUComputePipeline;
+    clear?: GPUComputePipeline;
+    render?: GPURenderPipeline;
+  } = {};
+  private size = { width: 0, height: 0 };
+  private pointer: PointerSnapshot = {
+    x: 0.5,
+    y: 0.5,
+    prevX: 0.5,
+    prevY: 0.5,
+    active: false,
+  };
   private brushState: BrushInput = {
     latent: ZERO_LATENT,
-  }
-  private lastTimestamp = 0
-  private frameTimeSamples: number[] = []
-  private readonly FPS_SAMPLE_SIZE = 60
+  };
+  private lastTimestamp = 0;
+  private readonly frameTimeSamples: number[] = [];
+  private readonly FPS_SAMPLE_SIZE = 60;
 
   constructor(canvas: HTMLCanvasElement, callbacks: SimulationCallbacks = {}) {
-    this.canvas = canvas
-    this.callbacks = callbacks
+    this.canvas = canvas;
+    this.callbacks = callbacks;
   }
 
   async initialize() {
     try {
-      this.emitStatus('initializing')
+      this.emitStatus("initializing");
       if (!navigator.gpu) {
-        throw new Error('WebGPU not available in this browser.')
+        throw new Error("WebGPU not available in this browser.");
       }
 
-      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
+      const adapter = await navigator.gpu.requestAdapter({
+        powerPreference: "high-performance",
+      });
       if (!adapter) {
-        throw new Error('Unable to acquire GPU adapter.')
+        throw new Error("Unable to acquire GPU adapter.");
       }
 
-      const device = await adapter.requestDevice()
-      this.device = device
-      this.queue = device.queue
-      this.presentationFormat = navigator.gpu.getPreferredCanvasFormat()
+      const device = await adapter.requestDevice();
+      this.device = device;
+      this.queue = device.queue;
+      this.presentationFormat = navigator.gpu.getPreferredCanvasFormat();
 
-      const context = this.canvas.getContext('webgpu')
+      const context = this.canvas.getContext("webgpu");
       if (!context) {
-        throw new Error('Failed to obtain GPUCanvasContext.')
+        throw new Error("Failed to obtain GPUCanvasContext.");
       }
-      this.context = context
+      this.context = context;
 
-      this.configureContext()
-      this.createResources()
-      this.attachResizeObserver()
-      this.startRenderLoop()
-      this.emitStatus('ready', 'WebGPU canvas ready')
+      this.configureContext();
+      this.createResources();
+      this.attachResizeObserver();
+      this.startRenderLoop();
+      this.emitStatus("ready", "WebGPU canvas ready");
     } catch (error) {
-      console.error(error)
-      const message = error instanceof Error ? error.message : 'Unknown WebGPU initialization error'
-      this.emitStatus('error', message)
-      throw error
+      console.error(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown WebGPU initialization error";
+      this.emitStatus("error", message);
+      throw error;
     }
   }
 
   destroy() {
     if (this.animationHandle !== null) {
-      cancelAnimationFrame(this.animationHandle)
-      this.animationHandle = null
+      cancelAnimationFrame(this.animationHandle);
+      this.animationHandle = null;
     }
-    this.resizeObserver?.disconnect()
-    this.resizeObserver = null
-    this.latent0Textures?.front.destroy()
-    this.latent0Textures?.back.destroy()
-    this.latent1Textures?.front.destroy()
-    this.latent1Textures?.back.destroy()
-    this.brushUniformBuffer?.destroy()
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.latent0Textures?.front.destroy();
+    this.latent0Textures?.back.destroy();
+    this.latent1Textures?.front.destroy();
+    this.latent1Textures?.back.destroy();
+    this.brushUniformBuffer?.destroy();
   }
 
   clearSurface() {
-    this.pointer = { ...this.pointer, active: false }
-    this.clearTextures()
+    this.pointer = { ...this.pointer, active: false };
+    this.clearTextures();
   }
 
   updateBrushInput(input: BrushInput) {
-    this.brushState = input
+    this.brushState = input;
   }
 
   attachResizeObserver() {
-    if (this.resizeObserver || !this.canvas) return
+    if (this.resizeObserver || !this.canvas) {
+      return;
+    }
     this.resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.target === this.canvas) {
-          const cr = entry.contentRect
-          this.handleResize(cr.width, cr.height)
+          const cr = entry.contentRect;
+          this.handleResize(cr.width, cr.height);
         }
       }
-    })
-    this.resizeObserver.observe(this.canvas)
+    });
+    this.resizeObserver.observe(this.canvas);
   }
 
   handlePointerDown(x: number, y: number) {
-    this.pointer = { ...this.pointer, x, y, prevX: x, prevY: y, active: true }
+    this.pointer = { ...this.pointer, x, y, prevX: x, prevY: y, active: true };
   }
 
   handlePointerMove(x: number, y: number) {
-    if (!this.pointer.active) return
-    this.pointer = { ...this.pointer, prevX: this.pointer.x, prevY: this.pointer.y, x, y }
+    if (!this.pointer.active) {
+      return;
+    }
+    this.pointer = {
+      ...this.pointer,
+      prevX: this.pointer.x,
+      prevY: this.pointer.y,
+      x,
+      y,
+    };
   }
 
   handlePointerUp() {
-    this.pointer = { ...this.pointer, active: false }
+    this.pointer = { ...this.pointer, active: false };
   }
 
   private configureContext() {
-    if (!this.device || !this.context) {
-      return
+    if (!(this.device && this.context)) {
+      return;
     }
     this.context.configure({
       device: this.device,
       format: this.presentationFormat,
-      alphaMode: 'premultiplied',
-    })
-    this.handleResize(this.canvas.clientWidth || 1, this.canvas.clientHeight || 1)
+      alphaMode: "premultiplied",
+    });
+    this.handleResize(
+      this.canvas.clientWidth || 1,
+      this.canvas.clientHeight || 1
+    );
   }
 
   private handleResize(width: number, height: number) {
-    if (!this.device || !this.context) {
-      return
+    if (!(this.device && this.context)) {
+      return;
     }
 
-    this.dpr = window.devicePixelRatio || 1
-    const pixelWidth = Math.max(1, Math.round(width * this.dpr))
-    const pixelHeight = Math.max(1, Math.round(height * this.dpr))
+    this.dpr = window.devicePixelRatio || 1;
+    const pixelWidth = Math.max(1, Math.round(width * this.dpr));
+    const pixelHeight = Math.max(1, Math.round(height * this.dpr));
 
     if (pixelWidth === this.size.width && pixelHeight === this.size.height) {
-      return
+      return;
     }
 
-    this.canvas.width = pixelWidth
-    this.canvas.height = pixelHeight
-    this.size = { width: pixelWidth, height: pixelHeight }
+    this.canvas.width = pixelWidth;
+    this.canvas.height = pixelHeight;
+    this.size = { width: pixelWidth, height: pixelHeight };
 
-    this.allocateTextures()
-    this.updateBrushUniform(this.lastTimestamp)
+    this.allocateTextures();
+    this.updateBrushUniform(this.lastTimestamp);
   }
 
   private allocateTextures() {
-    if (!this.device || this.size.width === 0 || this.size.height === 0) return
-    this.latent0Textures?.front.destroy()
-    this.latent0Textures?.back.destroy()
-    this.latent1Textures?.front.destroy()
-    this.latent1Textures?.back.destroy()
+    if (!this.device || this.size.width === 0 || this.size.height === 0) {
+      return;
+    }
+    this.latent0Textures?.front.destroy();
+    this.latent0Textures?.back.destroy();
+    this.latent1Textures?.front.destroy();
+    this.latent1Textures?.back.destroy();
 
     const usage =
       GPUTextureUsage.TEXTURE_BINDING |
       GPUTextureUsage.COPY_SRC |
       GPUTextureUsage.COPY_DST |
-      GPUTextureUsage.STORAGE_BINDING
+      GPUTextureUsage.STORAGE_BINDING;
 
     this.latent0Textures = {
-      label: 'latent0',
-      format: 'rgba16float',
+      label: "latent0",
+      format: "rgba16float",
       usage,
-      front: createTexture(this.device, 'latent0-front', 'rgba16float', usage, this.size.width, this.size.height),
-      back: createTexture(this.device, 'latent0-back', 'rgba16float', usage, this.size.width, this.size.height),
-    }
+      front: createTexture(
+        this.device,
+        "latent0-front",
+        "rgba16float",
+        usage,
+        this.size.width,
+        this.size.height
+      ),
+      back: createTexture(
+        this.device,
+        "latent0-back",
+        "rgba16float",
+        usage,
+        this.size.width,
+        this.size.height
+      ),
+    };
     this.latent1Textures = {
-      label: 'latent1',
-      format: 'rgba16float',
+      label: "latent1",
+      format: "rgba16float",
       usage,
-      front: createTexture(this.device, 'latent1-front', 'rgba16float', usage, this.size.width, this.size.height),
-      back: createTexture(this.device, 'latent1-back', 'rgba16float', usage, this.size.width, this.size.height),
-    }
+      front: createTexture(
+        this.device,
+        "latent1-front",
+        "rgba16float",
+        usage,
+        this.size.width,
+        this.size.height
+      ),
+      back: createTexture(
+        this.device,
+        "latent1-back",
+        "rgba16float",
+        usage,
+        this.size.width,
+        this.size.height
+      ),
+    };
 
-    this.clearTextures()
+    this.clearTextures();
   }
 
   private clearTextures() {
     if (
-      !this.device ||
-      !this.queue ||
-      !this.latent0Textures ||
-      !this.latent1Textures ||
-      !this.computeLayout ||
-      !this.brushUniformBuffer ||
-      !this.sampler ||
-      !this.pipelines.clear
+      !(
+        this.device &&
+        this.queue &&
+        this.latent0Textures &&
+        this.latent1Textures &&
+        this.computeLayout &&
+        this.brushUniformBuffer &&
+        this.sampler &&
+        this.pipelines.clear
+      )
     ) {
-      return
+      return;
     }
 
-    const encoder = this.device.createCommandEncoder({ label: 'pigment-clear' })
+    const encoder = this.device.createCommandEncoder({
+      label: "pigment-clear",
+    });
     const runClear = () => {
-      const bindGroup = this.device!.createBindGroup({
+      const bindGroup = this.device?.createBindGroup({
         layout: this.computeLayout!,
         entries: [
           { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
           { binding: 1, resource: this.sampler! },
-          { binding: 2, resource: this.latent0Textures!.front.createView() },
-          { binding: 3, resource: this.latent0Textures!.back.createView() },
-          { binding: 4, resource: this.latent1Textures!.front.createView() },
-          { binding: 5, resource: this.latent1Textures!.back.createView() },
+          { binding: 2, resource: this.latent0Textures?.front.createView() },
+          { binding: 3, resource: this.latent0Textures?.back.createView() },
+          { binding: 4, resource: this.latent1Textures?.front.createView() },
+          { binding: 5, resource: this.latent1Textures?.back.createView() },
         ],
-      })
-      const pass = encoder.beginComputePass({ label: 'pigment-clear-pass' })
-      pass.setPipeline(this.pipelines.clear!)
-      pass.setBindGroup(0, bindGroup)
-      const workgroupX = Math.ceil(this.size.width / WORKGROUP_SIZE)
-      const workgroupY = Math.ceil(this.size.height / WORKGROUP_SIZE)
-      pass.dispatchWorkgroups(workgroupX, workgroupY)
-      pass.end()
-      swapPingPong(this.latent0Textures!)
-      swapPingPong(this.latent1Textures!)
-    }
+      });
+      const pass = encoder.beginComputePass({ label: "pigment-clear-pass" });
+      pass.setPipeline(this.pipelines.clear!);
+      pass.setBindGroup(0, bindGroup);
+      const workgroupX = Math.ceil(this.size.width / WORKGROUP_SIZE);
+      const workgroupY = Math.ceil(this.size.height / WORKGROUP_SIZE);
+      pass.dispatchWorkgroups(workgroupX, workgroupY);
+      pass.end();
+      swapPingPong(this.latent0Textures!);
+      swapPingPong(this.latent1Textures!);
+    };
 
-    runClear()
-    runClear()
-    this.queue.submit([encoder.finish()])
+    runClear();
+    runClear();
+    this.queue.submit([encoder.finish()]);
   }
 
   private createResources() {
-    if (!this.device) return
+    if (!this.device) {
+      return;
+    }
     this.sampler = this.device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-      addressModeU: 'clamp-to-edge',
-      addressModeV: 'clamp-to-edge',
-    })
+      magFilter: "linear",
+      minFilter: "linear",
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+    });
 
     this.brushUniformBuffer = this.device.createBuffer({
-      label: 'brush-uniform',
+      label: "brush-uniform",
       size: BRUSH_UNIFORM_SIZE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    })
+    });
 
     this.computeLayout = this.device.createBindGroupLayout({
       entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, sampler: { type: 'filtering' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: "uniform" },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.COMPUTE,
+          sampler: { type: "filtering" },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: "float" },
+        },
         {
           binding: 3,
           visibility: GPUShaderStage.COMPUTE,
-          storageTexture: { access: 'write-only', format: 'rgba16float' },
+          storageTexture: { access: "write-only", format: "rgba16float" },
         },
-        { binding: 4, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float' } },
+        {
+          binding: 4,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: "float" },
+        },
         {
           binding: 5,
           visibility: GPUShaderStage.COMPUTE,
-          storageTexture: { access: 'write-only', format: 'rgba16float' },
+          storageTexture: { access: "write-only", format: "rgba16float" },
         },
       ],
-    })
+    });
 
-    this.pipelines.paint = this.createComputePipeline('paint', this.getPaintShader())
-    this.pipelines.diffuse = this.createComputePipeline('diffuse', this.getDiffuseShader())
-    this.pipelines.clear = this.createComputePipeline('clear', this.getClearShader())
-    this.pipelines.render = this.createRenderPipeline()
+    this.pipelines.paint = this.createComputePipeline(
+      "paint",
+      this.getPaintShader()
+    );
+    this.pipelines.diffuse = this.createComputePipeline(
+      "diffuse",
+      this.getDiffuseShader()
+    );
+    this.pipelines.clear = this.createComputePipeline(
+      "clear",
+      this.getClearShader()
+    );
+    this.pipelines.render = this.createRenderPipeline();
 
-    this.clearTextures()
+    this.clearTextures();
   }
 
   private createComputePipeline(label: string, code: string) {
-    if (!this.device || !this.computeLayout) return undefined
+    if (!(this.device && this.computeLayout)) {
+      return undefined;
+    }
     return this.device.createComputePipeline({
       label,
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.computeLayout] }),
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [this.computeLayout],
+      }),
       compute: {
-        module: this.device.createShaderModule({ code, label: `${label}-shader` }),
-        entryPoint: 'main',
+        module: this.device.createShaderModule({
+          code,
+          label: `${label}-shader`,
+        }),
+        entryPoint: "main",
       },
-    })
+    });
   }
 
   private createRenderPipeline() {
-    if (!this.device) return undefined
+    if (!this.device) {
+      return undefined;
+    }
     const bindGroupLayout = this.device.createBindGroupLayout({
       entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: "filtering" },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: "float" },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: "float" },
+        },
       ],
-    })
+    });
 
     return this.device.createRenderPipeline({
-      label: 'pigment-canvas-render',
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+      label: "pigment-canvas-render",
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [bindGroupLayout],
+      }),
       vertex: {
-        module: this.device.createShaderModule({ code: this.getRenderVertexShader() }),
-        entryPoint: 'main',
+        module: this.device.createShaderModule({
+          code: this.getRenderVertexShader(),
+        }),
+        entryPoint: "main",
       },
       fragment: {
-        module: this.device.createShaderModule({ code: this.getRenderFragmentShader() }),
-        entryPoint: 'main',
+        module: this.device.createShaderModule({
+          code: this.getRenderFragmentShader(),
+        }),
+        entryPoint: "main",
         targets: [{ format: this.presentationFormat }],
       },
-      primitive: { topology: 'triangle-list' },
-    })
+      primitive: { topology: "triangle-list" },
+    });
   }
 
   private startRenderLoop() {
     const frame = (timestamp: number) => {
-      this.step(timestamp)
-      this.animationHandle = requestAnimationFrame(frame)
-    }
-    this.animationHandle = requestAnimationFrame(frame)
+      this.step(timestamp);
+      this.animationHandle = requestAnimationFrame(frame);
+    };
+    this.animationHandle = requestAnimationFrame(frame);
   }
 
   private step(timestamp: number) {
     if (
-      !this.device ||
-      !this.queue ||
-      !this.context ||
-      !this.latent0Textures ||
-      !this.latent1Textures ||
-      !this.brushUniformBuffer
+      !(
+        this.device &&
+        this.queue &&
+        this.context &&
+        this.latent0Textures &&
+        this.latent1Textures &&
+        this.brushUniformBuffer
+      )
     ) {
-      return
+      return;
     }
 
-    const delta = this.lastTimestamp === 0 ? 0 : timestamp - this.lastTimestamp
-    this.lastTimestamp = timestamp
+    const delta = this.lastTimestamp === 0 ? 0 : timestamp - this.lastTimestamp;
+    this.lastTimestamp = timestamp;
 
-    this.updateBrushUniform(timestamp)
+    this.updateBrushUniform(timestamp);
 
-    const encoder = this.device.createCommandEncoder({ label: 'fluid-simulation-encoder' })
+    const encoder = this.device.createCommandEncoder({
+      label: "fluid-simulation-encoder",
+    });
 
     const runPipeline = (pipeline?: GPUComputePipeline) => {
-      if (!pipeline || !this.computeLayout || !this.sampler || !this.latent0Textures || !this.latent1Textures) return
-      const bindGroup = this.device!.createBindGroup({
+      if (
+        !(
+          pipeline &&
+          this.computeLayout &&
+          this.sampler &&
+          this.latent0Textures &&
+          this.latent1Textures
+        )
+      ) {
+        return;
+      }
+      const bindGroup = this.device?.createBindGroup({
         layout: this.computeLayout,
         entries: [
           { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
           { binding: 1, resource: this.sampler },
-          { binding: 2, resource: this.latent0Textures!.front.createView() },
-          { binding: 3, resource: this.latent0Textures!.back.createView() },
-          { binding: 4, resource: this.latent1Textures!.front.createView() },
-          { binding: 5, resource: this.latent1Textures!.back.createView() },
+          { binding: 2, resource: this.latent0Textures?.front.createView() },
+          { binding: 3, resource: this.latent0Textures?.back.createView() },
+          { binding: 4, resource: this.latent1Textures?.front.createView() },
+          { binding: 5, resource: this.latent1Textures?.back.createView() },
         ],
-      })
+      });
 
-      const pass = encoder.beginComputePass({ label: pipeline.label })
-      pass.setPipeline(pipeline)
-      pass.setBindGroup(0, bindGroup)
-      const workgroupX = Math.ceil(this.size.width / WORKGROUP_SIZE)
-      const workgroupY = Math.ceil(this.size.height / WORKGROUP_SIZE)
-      pass.dispatchWorkgroups(workgroupX, workgroupY)
-      pass.end()
-      swapPingPong(this.latent0Textures!)
-      swapPingPong(this.latent1Textures!)
-    }
+      const pass = encoder.beginComputePass({ label: pipeline.label });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      const workgroupX = Math.ceil(this.size.width / WORKGROUP_SIZE);
+      const workgroupY = Math.ceil(this.size.height / WORKGROUP_SIZE);
+      pass.dispatchWorkgroups(workgroupX, workgroupY);
+      pass.end();
+      swapPingPong(this.latent0Textures!);
+      swapPingPong(this.latent1Textures!);
+    };
 
-    runPipeline(this.pipelines.paint)
-    runPipeline(this.pipelines.diffuse)
+    runPipeline(this.pipelines.paint);
+    runPipeline(this.pipelines.diffuse);
 
-    const currentTexture = this.context.getCurrentTexture()
-    const view = currentTexture.createView({ label: 'presentation-view' })
+    const currentTexture = this.context.getCurrentTexture();
+    const view = currentTexture.createView({ label: "presentation-view" });
 
-    const renderPipeline = this.pipelines.render
+    const renderPipeline = this.pipelines.render;
     if (renderPipeline && this.sampler) {
       const renderBindGroup = this.device.createBindGroup({
         layout: renderPipeline.getBindGroupLayout(0),
@@ -425,116 +551,120 @@ export class FluidSimulation {
           { binding: 1, resource: this.latent0Textures.front.createView() },
           { binding: 2, resource: this.latent1Textures.front.createView() },
         ],
-      })
+      });
 
       const pass = encoder.beginRenderPass({
-        label: 'fluid-render-pass',
+        label: "fluid-render-pass",
         colorAttachments: [
           {
             view,
             clearValue: { r: 0.01, g: 0.01, b: 0.02, a: 1 },
-            loadOp: 'clear',
-            storeOp: 'store',
+            loadOp: "clear",
+            storeOp: "store",
           },
         ],
-      })
-      pass.setPipeline(renderPipeline)
-      pass.setBindGroup(0, renderBindGroup)
-      pass.draw(6, 1, 0, 0)
-      pass.end()
+      });
+      pass.setPipeline(renderPipeline);
+      pass.setBindGroup(0, renderBindGroup);
+      pass.draw(6, 1, 0, 0);
+      pass.end();
     }
 
-    this.queue.submit([encoder.finish()])
+    this.queue.submit([encoder.finish()]);
 
     // Calculate FPS using rolling average
     if (delta > 0) {
-      this.frameTimeSamples.push(delta)
+      this.frameTimeSamples.push(delta);
       if (this.frameTimeSamples.length > this.FPS_SAMPLE_SIZE) {
-        this.frameTimeSamples.shift()
+        this.frameTimeSamples.shift();
       }
     }
-    const avgFrameTime = this.frameTimeSamples.length > 0
-      ? this.frameTimeSamples.reduce((sum, t) => sum + t, 0) / this.frameTimeSamples.length
-      : delta
-    const fps = avgFrameTime > 0 ? 1000 / avgFrameTime : 0
+    const avgFrameTime =
+      this.frameTimeSamples.length > 0
+        ? this.frameTimeSamples.reduce((sum, t) => sum + t, 0) /
+          this.frameTimeSamples.length
+        : delta;
+    const fps = avgFrameTime > 0 ? 1000 / avgFrameTime : 0;
 
     this.callbacks.onMetrics?.({
       frameTimeMs: delta,
       fps: Math.round(fps),
       textureResolution: { ...this.size },
-    })
+    });
   }
 
   private updateBrushUniform(timestamp: number) {
-    if (!this.queue || !this.brushUniformBuffer) return
+    if (!(this.queue && this.brushUniformBuffer)) {
+      return;
+    }
 
-    const { width, height } = this.size
-    const pointerDown = this.pointer.active ? 1 : 0
-    const latent = this.brushState.latent
+    const { width, height } = this.size;
+    const pointerDown = this.pointer.active ? 1 : 0;
+    const latent = this.brushState.latent;
 
-    const brushRadius = 0.06 * Math.min(width || 1, height || 1)
+    const brushRadius = 0.06 * Math.min(width || 1, height || 1);
 
-    const data = this.brushUniformData
-    data[0] = width
-    data[1] = height
-    data[2] = this.pointer.x
-    data[3] = this.pointer.y
+    const data = this.brushUniformData;
+    data[0] = width;
+    data[1] = height;
+    data[2] = this.pointer.x;
+    data[3] = this.pointer.y;
 
-    data[4] = this.pointer.prevX
-    data[5] = this.pointer.prevY
-    data[6] = pointerDown
-    data[7] = brushRadius
+    data[4] = this.pointer.prevX;
+    data[5] = this.pointer.prevY;
+    data[6] = pointerDown;
+    data[7] = brushRadius;
 
-    data[8] = BRUSH_FLOW
-    data[9] = DIFFUSION_STRENGTH
-    data[10] = timestamp * 0.001
-    data[11] = 0
+    data[8] = BRUSH_FLOW;
+    data[9] = DIFFUSION_STRENGTH;
+    data[10] = timestamp * 0.001;
+    data[11] = 0;
 
-    data[12] = 0
-    data[13] = 0
-    data[14] = 0
-    data[15] = 0
+    data[12] = 0;
+    data[13] = 0;
+    data[14] = 0;
+    data[15] = 0;
 
-    data[16] = 0
-    data[17] = 0
-    data[18] = 0
-    data[19] = 0
+    data[16] = 0;
+    data[17] = 0;
+    data[18] = 0;
+    data[19] = 0;
 
-    data[20] = 0
-    data[21] = 0
-    data[22] = 0
-    data[23] = 0
+    data[20] = 0;
+    data[21] = 0;
+    data[22] = 0;
+    data[23] = 0;
 
-    data[24] = 0
-    data[25] = 0
-    data[26] = 0
-    data[27] = 0
+    data[24] = 0;
+    data[25] = 0;
+    data[26] = 0;
+    data[27] = 0;
 
-    data[28] = latent[0]
-    data[29] = latent[1]
-    data[30] = latent[2]
-    data[31] = latent[3]
+    data[28] = latent[0];
+    data[29] = latent[1];
+    data[30] = latent[2];
+    data[31] = latent[3];
 
-    data[32] = latent[4]
-    data[33] = latent[5]
-    data[34] = latent[6]
-    data[35] = 0
+    data[32] = latent[4];
+    data[33] = latent[5];
+    data[34] = latent[6];
+    data[35] = 0;
 
-    data[36] = 0
-    data[37] = 0
-    data[38] = 0
-    data[39] = 0
+    data[36] = 0;
+    data[37] = 0;
+    data[38] = 0;
+    data[39] = 0;
 
-    data[40] = 0
-    data[41] = 0
-    data[42] = 0
-    data[43] = 0
+    data[40] = 0;
+    data[41] = 0;
+    data[42] = 0;
+    data[43] = 0;
 
-    this.queue.writeBuffer(this.brushUniformBuffer, 0, data)
+    this.queue.writeBuffer(this.brushUniformBuffer, 0, data);
   }
 
   private emitStatus(status: SimulationStatus, detail?: string) {
-    this.callbacks.onStatusChange?.(status, detail)
+    this.callbacks.onStatusChange?.(status, detail);
   }
 
   private getCommonShaderHeader() {
@@ -578,7 +708,7 @@ fn inBounds(coord: vec2<u32>, dims: vec2<u32>) -> bool {
 fn texelUv(coord: vec2<u32>, dims: vec2<u32>) -> vec2<f32> {
   return (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims);
 }
-`
+`;
   }
 
   private getPaintShader() {
@@ -608,7 +738,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   }
   textureStore(latent0Dst, vec2<i32>(gid.xy), latent0);
   textureStore(latent1Dst, vec2<i32>(gid.xy), latent1);
-}`
+}`;
   }
 
   private getDiffuseShader() {
@@ -639,7 +769,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let latent1 = mix(center1, blur1, diffusion);
   textureStore(latent0Dst, vec2<i32>(gid.xy), latent0);
   textureStore(latent1Dst, vec2<i32>(gid.xy), latent1);
-}`
+}`;
   }
 
   private getClearShader() {
@@ -650,7 +780,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   if (!inBounds(gid.xy, dims)) { return; }
   textureStore(latent0Dst, vec2<i32>(gid.xy), vec4<f32>(0.0));
   textureStore(latent1Dst, vec2<i32>(gid.xy), vec4<f32>(0.0));
-}`
+}`;
   }
 
   private getRenderVertexShader() {
@@ -675,7 +805,7 @@ struct VSOut {
   vsOut.uv = (positions[vertexIndex] + vec2<f32>(1.0)) * 0.5;
   vsOut.uv.y = 1.0 - vsOut.uv.y;
   return vsOut;
-}`
+}`;
   }
 
   private getRenderFragmentShader() {
@@ -741,6 +871,6 @@ fn latentToColor(latent0: vec4<f32>, latent1: vec4<f32>) -> vec3<f32> {
   let coverage = clamp(weight, 0.0, 1.0);
   let color = latentToColor(avgLatent0, avgLatent1) * coverage;
   return vec4<f32>(color, 1.0);
-}`
+}`;
   }
 }
