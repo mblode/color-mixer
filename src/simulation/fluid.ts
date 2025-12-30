@@ -314,10 +314,10 @@ export class FluidSimulation {
         entries: [
           { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
           { binding: 1, resource: this.sampler! },
-          { binding: 2, resource: this.latent0Textures?.front.createView() },
-          { binding: 3, resource: this.latent0Textures?.back.createView() },
-          { binding: 4, resource: this.latent1Textures?.front.createView() },
-          { binding: 5, resource: this.latent1Textures?.back.createView() },
+          { binding: 2, resource: this.latent0Textures!.front.createView() },
+          { binding: 3, resource: this.latent0Textures!.back.createView() },
+          { binding: 4, resource: this.latent1Textures!.front.createView() },
+          { binding: 5, resource: this.latent1Textures!.back.createView() },
         ],
       });
       const pass = encoder.beginComputePass({ label: "pigment-clear-pass" });
@@ -518,10 +518,10 @@ export class FluidSimulation {
         entries: [
           { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
           { binding: 1, resource: this.sampler },
-          { binding: 2, resource: this.latent0Textures?.front.createView() },
-          { binding: 3, resource: this.latent0Textures?.back.createView() },
-          { binding: 4, resource: this.latent1Textures?.front.createView() },
-          { binding: 5, resource: this.latent1Textures?.back.createView() },
+          { binding: 2, resource: this.latent0Textures!.front.createView() },
+          { binding: 3, resource: this.latent0Textures!.back.createView() },
+          { binding: 4, resource: this.latent1Textures!.front.createView() },
+          { binding: 5, resource: this.latent1Textures!.back.createView() },
         ],
       });
 
