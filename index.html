@@ -56,8 +56,8 @@
     <script>
     "use strict";
     window.dataLayer = window.dataLayer || [];
-    function gtag() {
-      dataLayer.push(arguments);
+    function gtag(...args) {
+      window.dataLayer.push(args);
     }
     gtag("js", new Date());
     gtag("config", "G-9D3DKRFC1R");
