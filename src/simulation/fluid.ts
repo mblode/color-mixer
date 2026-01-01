@@ -5,8 +5,9 @@ const WORKGROUP_SIZE = 8;
 const BRUSH_FLOAT_COUNT = 44;
 const BRUSH_VEC4_COUNT = Math.ceil(BRUSH_FLOAT_COUNT / 4);
 const BRUSH_UNIFORM_SIZE = BRUSH_VEC4_COUNT * 16;
-const BRUSH_FLOW = 0.18;
-const DIFFUSION_STRENGTH = 0.12;
+const DEFAULT_BRUSH_FLOW = 0.6;
+const DEFAULT_BRUSH_RADIUS = 0.06;
+const DIFFUSION_STRENGTH = 0;
 
 interface PingPongTexture {
   label: string;
@@ -82,6 +83,8 @@ export class FluidSimulation {
   };
   private brushState: BrushInput = {
     latent: ZERO_LATENT,
+    radius: DEFAULT_BRUSH_RADIUS,
+    flow: DEFAULT_BRUSH_FLOW,
   };
   private lastTimestamp = 0;
   private readonly frameTimeSamples: number[] = [];
@@ -500,6 +503,10 @@ export class FluidSimulation {
     const encoder = this.device.createCommandEncoder({
       label: "fluid-simulation-encoder",
     });
+    const normalizedFlow = Number.isFinite(this.brushState.flow)
+      ? this.brushState.flow
+      : DEFAULT_BRUSH_FLOW;
+    const shouldPaint = this.pointer.active && normalizedFlow > 0;
 
     const runPipeline = (pipeline?: GPUComputePipeline) => {
       if (
@@ -536,8 +543,12 @@ export class FluidSimulation {
       swapPingPong(this.latent1Textures!);
     };
 
-    runPipeline(this.pipelines.paint);
-    runPipeline(this.pipelines.diffuse);
+    if (shouldPaint) {
+      runPipeline(this.pipelines.paint);
+    }
+    if (DIFFUSION_STRENGTH > 0) {
+      runPipeline(this.pipelines.diffuse);
+    }
 
     const currentTexture = this.context.getCurrentTexture();
     const view = currentTexture.createView({ label: "presentation-view" });
@@ -558,7 +569,7 @@ export class FluidSimulation {
         colorAttachments: [
           {
             view,
-            clearValue: { r: 0.01, g: 0.01, b: 0.02, a: 1 },
+            clearValue: { r: 1, g: 1, b: 1, a: 1 },
             loadOp: "clear",
             storeOp: "store",
           },
@@ -601,8 +612,17 @@ export class FluidSimulation {
     const { width, height } = this.size;
     const pointerDown = this.pointer.active ? 1 : 0;
     const latent = this.brushState.latent;
-
-    const brushRadius = 0.06 * Math.min(width || 1, height || 1);
+    const radiusScale = Number.isFinite(this.brushState.radius)
+      ? this.brushState.radius
+      : DEFAULT_BRUSH_RADIUS;
+    const flow = Number.isFinite(this.brushState.flow)
+      ? this.brushState.flow
+      : DEFAULT_BRUSH_FLOW;
+    const brushRadius = Math.max(
+      1,
+      radiusScale * Math.min(width || 1, height || 1)
+    );
+    const clampedFlow = Math.min(1, Math.max(0, flow));
 
     const data = this.brushUniformData;
     data[0] = width;
@@ -615,7 +635,7 @@ export class FluidSimulation {
     data[6] = pointerDown;
     data[7] = brushRadius;
 
-    data[8] = BRUSH_FLOW;
+    data[8] = clampedFlow;
     data[9] = DIFFUSION_STRENGTH;
     data[10] = timestamp * 0.001;
     data[11] = 0;
@@ -718,19 +738,26 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let dims = textureDimensions(latent0Dst);
   if (!inBounds(gid.xy, dims)) { return; }
   let uv = texelUv(gid.xy, dims);
-  var latent0 = textureSampleLevel(latent0Src, linearSampler, uv, 0.0);
-  var latent1 = textureSampleLevel(latent1Src, linearSampler, uv, 0.0);
+  var latent0 = textureLoad(latent0Src, vec2<i32>(gid.xy), 0);
+  var latent1 = textureLoad(latent1Src, vec2<i32>(gid.xy), 0);
   let resolution = readVec2(0u);
   let pointer = readVec2(2u);
+  let prevPointer = readVec2(4u);
   let brushMeta = readVec4(6u);
   let flow = clamp(brushMeta.z, 0.0, 1.0);
   if (brushMeta.x > 0.5) {
-    let pointerUv = pointer / resolution;
-    let diff = (uv - pointerUv) * resolution;
-    let dist = length(diff);
+    let p = uv * resolution;
+    let a = prevPointer;
+    let b = pointer;
+    let ab = b - a;
+    let ap = p - a;
+    let denom = max(1e-3, dot(ab, ab));
+    let t = clamp(dot(ap, ab) / denom, 0.0, 1.0);
+    let closest = a + ab * t;
+    let dist = length(p - closest);
     let falloff = max(0.0, 1.0 - dist / max(1.0, brushMeta.y));
     let influence = falloff * falloff;
-    let deposit = influence * 0.35 * flow;
+    let deposit = influence * 0.55 * flow;
     let pigment0 = readVec4(28u);
     let pigment1 = readVec4(32u);
     latent0 = latent0 + pigment0 * deposit;
@@ -862,14 +889,16 @@ fn latentToColor(latent0: vec4<f32>, latent1: vec4<f32>) -> vec3<f32> {
   let latent0 = textureSampleLevel(latent0Texture, linearSampler, uv, 0.0);
   let latent1 = textureSampleLevel(latent1Texture, linearSampler, uv, 0.0);
   let weight = latent1.w;
+  let background = vec3<f32>(1.0);
   if (weight <= 1e-5) {
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    return vec4<f32>(background, 1.0);
   }
   let invWeight = 1.0 / weight;
   let avgLatent0 = latent0 * invWeight;
   let avgLatent1 = vec4<f32>(latent1.xyz * invWeight, 0.0);
   let coverage = clamp(weight, 0.0, 1.0);
-  let color = latentToColor(avgLatent0, avgLatent1) * coverage;
+  let paintColor = latentToColor(avgLatent0, avgLatent1);
+  let color = background * (1.0 - coverage) + paintColor * coverage;
   return vec4<f32>(color, 1.0);
 }`;
   }

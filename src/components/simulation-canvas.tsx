@@ -2,6 +2,8 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FluidSimulation } from "../simulation/fluid";
 import type { BrushInput, SimulationStatus } from "../simulation/types";
+import { Button } from "./ui/button";
+import { Card, CardContent } from "./ui/card";
 
 export interface SimulationCanvasProps {
   brushInput: BrushInput;
@@ -10,6 +12,8 @@ export interface SimulationCanvasProps {
 export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simulationRef = useRef<FluidSimulation | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
+  const isPointerDownRef = useRef(false);
   const [status, setStatus] = useState<SimulationStatus>("idle");
   const [statusDetail, setStatusDetail] = useState<string>(
     "Waiting for initialization..."
@@ -69,17 +73,30 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
 
     return {
       onPointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        event.preventDefault();
+        if (
+          activePointerIdRef.current !== null &&
+          activePointerIdRef.current !== event.pointerId
+        ) {
+          return;
+        }
         const coords = getCoordinates(event);
         if (!coords) {
           return;
         }
+        activePointerIdRef.current = event.pointerId;
+        isPointerDownRef.current = true;
         canvasRef.current?.setPointerCapture(event.pointerId);
         simulationRef.current?.handlePointerDown(coords.x, coords.y);
       },
       onPointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => {
-        if (event.buttons === 0) {
+        if (
+          !isPointerDownRef.current ||
+          activePointerIdRef.current !== event.pointerId
+        ) {
           return;
         }
+        event.preventDefault();
         const coords = getCoordinates(event);
         if (!coords) {
           return;
@@ -87,10 +104,37 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         simulationRef.current?.handlePointerMove(coords.x, coords.y);
       },
       onPointerUp: (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        if (
+          activePointerIdRef.current !== null &&
+          activePointerIdRef.current !== event.pointerId
+        ) {
+          return;
+        }
+        isPointerDownRef.current = false;
+        activePointerIdRef.current = null;
         canvasRef.current?.releasePointerCapture(event.pointerId);
         simulationRef.current?.handlePointerUp();
       },
-      onPointerLeave: () => {
+      onPointerCancel: (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        if (
+          activePointerIdRef.current !== null &&
+          activePointerIdRef.current !== event.pointerId
+        ) {
+          return;
+        }
+        isPointerDownRef.current = false;
+        activePointerIdRef.current = null;
+        simulationRef.current?.handlePointerUp();
+      },
+      onPointerLeave: (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        if (
+          activePointerIdRef.current !== null &&
+          activePointerIdRef.current !== event.pointerId
+        ) {
+          return;
+        }
+        isPointerDownRef.current = false;
+        activePointerIdRef.current = null;
         simulationRef.current?.handlePointerUp();
       },
     };
@@ -100,27 +144,46 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
     simulationRef.current?.clearSurface();
   };
 
-  const showStatus = status === "error";
-
+  const showDetail = status === "error";
   return (
-    <section aria-live="polite" className="panel canvas-panel">
-      <div className="canvas-toolbar">
-        {showStatus ? (
-          <span className="canvas-status">{statusDetail}</span>
-        ) : (
-          <span className="canvas-status" />
-        )}
-        <button className="ghost-button" onClick={handleClear} type="button">
-          Clear
-        </button>
-      </div>
-
-      <canvas
-        aria-label="Pigment canvas"
-        className="simulation-canvas"
-        ref={canvasRef}
-        {...pointerHandlers}
-      />
-    </section>
+    <Card className="shadow-soft">
+      <CardContent className="space-y-3 pt-6">
+        <div className="overflow-hidden rounded-3xl border bg-white shadow-inner">
+          <canvas
+            aria-label="Pigment canvas"
+            className="h-[60vh] w-full touch-none select-none"
+<<<<<<< Updated upstream
+            onContextMenu={(event) => event.preventDefault()}
+            ref={canvasRef}
+=======
+            ref={canvasRef}
+            onContextMenu={(event) => event.preventDefault()}
+>>>>>>> Stashed changes
+            {...pointerHandlers}
+          />
+        </div>
+        <div className="flex items-center justify-end">
+<<<<<<< Updated upstream
+          <Button
+            onClick={handleClear}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+=======
+          <Button variant="outline" size="sm" onClick={handleClear} type="button">
+>>>>>>> Stashed changes
+            Clear
+          </Button>
+        </div>
+        {showDetail ? (
+<<<<<<< Updated upstream
+          <p className="text-destructive text-xs">{statusDetail}</p>
+=======
+          <p className="text-xs text-destructive">{statusDetail}</p>
+>>>>>>> Stashed changes
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }

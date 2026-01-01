@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import { BrushControls } from "./components/brush-controls";
 import { PigmentControls } from "./components/pigment-controls";
 import { SimulationCanvas } from "./components/simulation-canvas";
+import { Button } from "./components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./components/ui/card";
 import { hexToPigmentLatent, ZERO_LATENT } from "./lib/mixbox";
 import { type PigmentPreset, pigmentPalette } from "./lib/pigments";
 import {
@@ -27,19 +36,26 @@ const normalizeHex = (value: string) => {
   return `#${raw}`.toUpperCase();
 };
 
+const statusLabel = {
+  checking: "Checking WebGPU…",
+  supported: "WebGPU ready",
+  unsupported: "WebGPU unavailable",
+};
+
 function App() {
   const [capability, setCapability] =
     useState<WebGPUCapabilityResult>(initialStatus);
   const [pigment, setPigment] = useState<PigmentPreset>(pigmentPalette[0]);
   const [customHex, setCustomHex] = useState("#FF8A00");
+  const [brushRadius, setBrushRadius] = useState(0.06);
+  const [brushFlow, setBrushFlow] = useState(0.6);
   const customPigment = useMemo<PigmentPreset>(
     () => ({
       id: "custom",
       name: "Custom Pigment",
       hex: customHex,
-      mixboxPigment: "custom",
       description: "User-picked pigment.",
-      family: "primary",
+      family: "neutral",
       temperature: "neutral",
     }),
     [customHex]
@@ -51,8 +67,10 @@ function App() {
   const brushInput = useMemo<BrushInput>(
     () => ({
       latent: pigmentLatent,
+      radius: brushRadius,
+      flow: brushFlow,
     }),
-    [pigmentLatent]
+    [brushFlow, brushRadius, pigmentLatent]
   );
 
   useEffect(() => {
@@ -88,70 +106,87 @@ function App() {
 
   const showCanvas = capability.status === "supported";
   const showFallback = capability.status === "unsupported";
+  const statusText = statusLabel[capability.status];
 
   return (
-    <div className="app">
-      <header className="app__header">
-        <h1>Color Mixer</h1>
-      </header>
+    <div className="min-h-screen">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
+        <header className="flex flex-col gap-2">
+<<<<<<< Updated upstream
+          <h1 className="font-semibold text-3xl text-foreground tracking-tight sm:text-4xl">
+            Color Mixer
+          </h1>
+          {capability.status === "unsupported" ? (
+            <p className="text-muted-foreground text-sm">{statusText}</p>
+=======
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            Color Mixer
+          </h1>
+          {capability.status === "unsupported" ? (
+            <p className="text-sm text-muted-foreground">{statusText}</p>
+>>>>>>> Stashed changes
+          ) : null}
+        </header>
 
-      <main className="app__main">
-        <section className="panel app__controls">
-          <PigmentControls
-            customPigment={customPigment}
-            onCustomColorChange={handleCustomColorChange}
-            onSelectPigment={setActivePigment}
-            palette={pigmentPalette}
-            pigment={pigment}
-          />
-        </section>
+        <main className="grid gap-6 lg:grid-cols-[360px_1fr]">
+          <div className="space-y-6">
+            <PigmentControls
+              customPigment={customPigment}
+              onCustomColorChange={handleCustomColorChange}
+              onSelectPigment={setActivePigment}
+              palette={pigmentPalette}
+              pigment={pigment}
+            />
+            <BrushControls
+              flow={brushFlow}
+<<<<<<< Updated upstream
+              onFlowChange={setBrushFlow}
+              onRadiusChange={setBrushRadius}
+              radius={brushRadius}
+=======
+              radius={brushRadius}
+              onFlowChange={setBrushFlow}
+              onRadiusChange={setBrushRadius}
+>>>>>>> Stashed changes
+            />
+          </div>
 
-        {showCanvas ? (
-          <SimulationCanvas brushInput={brushInput} />
-        ) : (
-          <section
-            aria-label="WebGPU status message"
-            className="panel canvas-fallback"
-          >
-            {showFallback ? (
-              <>
-                <p>
-                  WebGPU is unavailable. Use a recent Chromium build with WebGPU
-                  enabled.
-                </p>
-                {capability.message ? (
-                  <p className="canvas-fallback__details">
+          {showCanvas ? (
+            <SimulationCanvas brushInput={brushInput} />
+          ) : (
+            <Card className="shadow-soft">
+              <CardHeader>
+                <CardTitle>WebGPU not available</CardTitle>
+                <CardDescription>Use a WebGPU-enabled browser.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {showFallback && capability.message ? (
+<<<<<<< Updated upstream
+                  <p className="text-muted-foreground text-sm">
                     {capability.message}
                   </p>
                 ) : null}
-                <a
-                  href="https://developer.chrome.com/docs/web-platform/webgpu"
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  WebGPU docs
-                </a>
-              </>
-            ) : (
-              <p>Checking WebGPU support...</p>
-            )}
-          </section>
-        )}
-      </main>
-
-      <footer className="app__footer">
-        <p>
-          Mixing via{" "}
-          <a
-            href="https://scrtwpns.com/mixbox"
-            rel="noreferrer"
-            target="_blank"
-          >
-            Mixbox
-          </a>
-          .
-        </p>
-      </footer>
+                <Button asChild size="sm" variant="outline">
+=======
+                  <p className="text-sm text-muted-foreground">
+                    {capability.message}
+                  </p>
+                ) : null}
+                <Button asChild variant="outline" size="sm">
+>>>>>>> Stashed changes
+                  <a
+                    href="https://developer.chrome.com/docs/web-platform/webgpu"
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open WebGPU docs
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

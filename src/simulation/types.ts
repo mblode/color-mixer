@@ -4,6 +4,8 @@ export type SimulationStatus = "idle" | "initializing" | "ready" | "error";
 
 export interface BrushInput {
   latent: PigmentLatent;
+  radius: number;
+  flow: number;
 }
 
 export interface PointerState {

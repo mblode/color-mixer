@@ -4,7 +4,6 @@ export interface PigmentPreset {
   id: string;
   name: string;
   hex: string;
-  mixboxPigment: string;
   description: string;
   family: "primary" | "earth" | "neutral";
   temperature: "warm" | "cool" | "neutral";
@@ -17,7 +16,6 @@ export const pigmentPalette: PigmentPreset[] = [
     id: "primary-yellow",
     name: "Primary Yellow",
     hex: "#FFE300",
-    mixboxPigment: "primary_yellow",
     description: "Bright, sunny yellow that keeps mixes high-chroma.",
     family: "primary",
     temperature: "warm",
@@ -26,7 +24,6 @@ export const pigmentPalette: PigmentPreset[] = [
     id: "primary-red",
     name: "Primary Red",
     hex: "#FF2A2A",
-    mixboxPigment: "primary_red",
     description: "Vivid red that pushes oranges and bold neutrals.",
     family: "primary",
     temperature: "warm",
@@ -35,7 +32,6 @@ export const pigmentPalette: PigmentPreset[] = [
     id: "primary-blue",
     name: "Primary Blue",
     hex: "#235CFF",
-    mixboxPigment: "primary_blue",
     description: "Clean blue that anchors cool shadows and violets.",
     family: "primary",
     temperature: "cool",
@@ -44,7 +40,6 @@ export const pigmentPalette: PigmentPreset[] = [
     id: "primary-cyan",
     name: "Primary Cyan",
     hex: "#00C8FF",
-    mixboxPigment: "primary_cyan",
     description: "Electric cyan that brightens greens and sky blends.",
     family: "primary",
     temperature: "cool",
@@ -53,7 +48,6 @@ export const pigmentPalette: PigmentPreset[] = [
     id: "primary-magenta",
     name: "Primary Magenta",
     hex: "#FF2DAA",
-    mixboxPigment: "primary_magenta",
     description: "High-saturation magenta for punchy pinks and violets.",
     family: "primary",
     temperature: "cool",
@@ -62,7 +56,6 @@ export const pigmentPalette: PigmentPreset[] = [
     id: "primary-green",
     name: "Primary Green",
     hex: "#00C853",
-    mixboxPigment: "primary_green",
     description: "Bold green for fresh mixes and clean neutrals.",
     family: "primary",
     temperature: "cool",
