@@ -34,20 +34,27 @@ export function PigmentControls({
       <CardContent className="pt-6">
         <div className="flex flex-wrap items-center gap-2">
           <Popover
+<<<<<<< HEAD
 <<<<<<< Updated upstream
 =======
             open={isCustomOpen}
 >>>>>>> Stashed changes
+=======
+            open={isCustomOpen}
+>>>>>>> 6d5602a (Save)
             onOpenChange={(nextOpen) => {
               setIsCustomOpen(nextOpen);
               if (nextOpen) {
                 onSelectPigment(customPigment);
               }
             }}
+<<<<<<< HEAD
 <<<<<<< Updated upstream
             open={isCustomOpen}
 =======
 >>>>>>> Stashed changes
+=======
+>>>>>>> 6d5602a (Save)
           >
             <PopoverTrigger asChild>
               <button
@@ -90,11 +97,15 @@ export function PigmentControls({
                 )}
               </button>
             </PopoverTrigger>
+<<<<<<< HEAD
 <<<<<<< Updated upstream
             <PopoverContent align="start" className="w-72" sideOffset={12}>
 =======
             <PopoverContent align="start" sideOffset={12} className="w-72">
 >>>>>>> Stashed changes
+=======
+            <PopoverContent align="start" sideOffset={12} className="w-72">
+>>>>>>> 6d5602a (Save)
               <div className="space-y-3">
                 <div className="rounded-2xl bg-muted/30 p-2">
                   <HexColorPicker
@@ -104,11 +115,15 @@ export function PigmentControls({
                 </div>
                 <HexColorInput
                   aria-label="Custom pigment hex"
+<<<<<<< HEAD
 <<<<<<< Updated upstream
                   className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 font-medium text-foreground text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 =======
                   className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 >>>>>>> Stashed changes
+=======
+                  className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+>>>>>>> 6d5602a (Save)
                   color={customPigment.hex}
                   onChange={handleCustomChange}
                   placeholder="#RRGGBB"
@@ -152,16 +167,22 @@ export function PigmentControls({
 
 function PlusIcon() {
   return (
+<<<<<<< HEAD
 <<<<<<< Updated upstream
     <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
 =======
+=======
+>>>>>>> 6d5602a (Save)
     <svg
       aria-hidden="true"
       className="h-4 w-4"
       fill="none"
       viewBox="0 0 24 24"
     >
+<<<<<<< HEAD
 >>>>>>> Stashed changes
+=======
+>>>>>>> 6d5602a (Save)
       <path
         d="M12 5v14M5 12h14"
         stroke="currentColor"
@@ -174,16 +195,22 @@ function PlusIcon() {
 
 function PencilIcon() {
   return (
+<<<<<<< HEAD
 <<<<<<< Updated upstream
     <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
 =======
+=======
+>>>>>>> 6d5602a (Save)
     <svg
       aria-hidden="true"
       className="h-4 w-4"
       fill="none"
       viewBox="0 0 24 24"
     >
+<<<<<<< HEAD
 >>>>>>> Stashed changes
+=======
+>>>>>>> 6d5602a (Save)
       <path
         d="M4 16.5V20h3.5L19 8.5 15.5 5 4 16.5z"
         stroke="currentColor"

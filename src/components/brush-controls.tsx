@@ -50,11 +50,15 @@ export function BrushControls({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="brush-size">Brush size</Label>
+<<<<<<< HEAD
 <<<<<<< Updated upstream
             <span className="font-medium text-muted-foreground text-xs">
 =======
             <span className="text-xs font-medium text-muted-foreground">
 >>>>>>> Stashed changes
+=======
+            <span className="text-xs font-medium text-muted-foreground">
+>>>>>>> 6d5602a (Save)
               {formatPercent(radius, MIN_BRUSH_RADIUS, MAX_BRUSH_RADIUS)}
             </span>
           </div>
@@ -85,11 +89,15 @@ export function BrushControls({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="brush-flow">Flow</Label>
+<<<<<<< HEAD
 <<<<<<< Updated upstream
             <span className="font-medium text-muted-foreground text-xs">
 =======
             <span className="text-xs font-medium text-muted-foreground">
 >>>>>>> Stashed changes
+=======
+            <span className="text-xs font-medium text-muted-foreground">
+>>>>>>> 6d5602a (Save)
               {formatPercent(flow, MIN_FLOW, MAX_FLOW)}
             </span>
           </div>

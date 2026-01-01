@@ -152,6 +152,7 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
           <canvas
             aria-label="Pigment canvas"
             className="h-[60vh] w-full touch-none select-none"
+<<<<<<< HEAD
 <<<<<<< Updated upstream
             onContextMenu={(event) => event.preventDefault()}
             ref={canvasRef}
@@ -159,10 +160,15 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
             ref={canvasRef}
             onContextMenu={(event) => event.preventDefault()}
 >>>>>>> Stashed changes
+=======
+            ref={canvasRef}
+            onContextMenu={(event) => event.preventDefault()}
+>>>>>>> 6d5602a (Save)
             {...pointerHandlers}
           />
         </div>
         <div className="flex items-center justify-end">
+<<<<<<< HEAD
 <<<<<<< Updated upstream
           <Button
             onClick={handleClear}
@@ -173,15 +179,22 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
 =======
           <Button variant="outline" size="sm" onClick={handleClear} type="button">
 >>>>>>> Stashed changes
+=======
+          <Button variant="outline" size="sm" onClick={handleClear} type="button">
+>>>>>>> 6d5602a (Save)
             Clear
           </Button>
         </div>
         {showDetail ? (
+<<<<<<< HEAD
 <<<<<<< Updated upstream
           <p className="text-destructive text-xs">{statusDetail}</p>
 =======
           <p className="text-xs text-destructive">{statusDetail}</p>
 >>>>>>> Stashed changes
+=======
+          <p className="text-xs text-destructive">{statusDetail}</p>
+>>>>>>> 6d5602a (Save)
         ) : null}
       </CardContent>
     </Card>
