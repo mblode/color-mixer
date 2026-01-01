@@ -112,25 +112,11 @@ function App() {
     <div className="min-h-screen">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
         <header className="flex flex-col gap-2">
-<<<<<<< HEAD
-<<<<<<< Updated upstream
           <h1 className="font-semibold text-3xl text-foreground tracking-tight sm:text-4xl">
             Color Mixer
           </h1>
           {capability.status === "unsupported" ? (
             <p className="text-muted-foreground text-sm">{statusText}</p>
-=======
-=======
->>>>>>> 6d5602a (Save)
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Color Mixer
-          </h1>
-          {capability.status === "unsupported" ? (
-            <p className="text-sm text-muted-foreground">{statusText}</p>
-<<<<<<< HEAD
->>>>>>> Stashed changes
-=======
->>>>>>> 6d5602a (Save)
           ) : null}
         </header>
 
@@ -145,21 +131,9 @@ function App() {
             />
             <BrushControls
               flow={brushFlow}
-<<<<<<< HEAD
-<<<<<<< Updated upstream
               onFlowChange={setBrushFlow}
               onRadiusChange={setBrushRadius}
               radius={brushRadius}
-=======
-              radius={brushRadius}
-              onFlowChange={setBrushFlow}
-              onRadiusChange={setBrushRadius}
->>>>>>> Stashed changes
-=======
-              radius={brushRadius}
-              onFlowChange={setBrushFlow}
-              onRadiusChange={setBrushRadius}
->>>>>>> 6d5602a (Save)
             />
           </div>
 
@@ -173,27 +147,11 @@ function App() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {showFallback && capability.message ? (
-<<<<<<< HEAD
-<<<<<<< Updated upstream
                   <p className="text-muted-foreground text-sm">
                     {capability.message}
                   </p>
                 ) : null}
                 <Button asChild size="sm" variant="outline">
-=======
-                  <p className="text-sm text-muted-foreground">
-                    {capability.message}
-                  </p>
-                ) : null}
-                <Button asChild variant="outline" size="sm">
->>>>>>> Stashed changes
-=======
-                  <p className="text-sm text-muted-foreground">
-                    {capability.message}
-                  </p>
-                ) : null}
-                <Button asChild variant="outline" size="sm">
->>>>>>> 6d5602a (Save)
                   <a
                     href="https://developer.chrome.com/docs/web-platform/webgpu"
                     rel="noreferrer"

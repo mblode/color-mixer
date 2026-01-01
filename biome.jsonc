@@ -4,7 +4,8 @@
   "linter": {
     "rules": {
       "suspicious": {
-        "noBitwiseOperators": "off"
+        "noBitwiseOperators": "off",
+        "noUnknownAtRules": "off"
       },
       "style": {
         "noNonNullAssertion": "off"

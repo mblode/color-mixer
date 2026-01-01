@@ -6,10 +6,11 @@ import {
   pigmentSlots,
 } from "./pigments";
 
+const HEX_PATTERN = /^#[0-9A-Fa-f]{6}$/;
+
 describe("pigmentPalette", () => {
   it("keeps ids unique and fields well-formed", () => {
     const ids = pigmentPalette.map((pigment) => pigment.id);
-    const hexPattern = /^#[0-9A-Fa-f]{6}$/;
     const families = new Set(["primary", "earth", "neutral"]);
     const temperatures = new Set(["warm", "cool", "neutral"]);
 
@@ -18,7 +19,7 @@ describe("pigmentPalette", () => {
     for (const pigment of pigmentPalette) {
       expect(pigment.name).toBeTruthy();
       expect(pigment.description).toBeTruthy();
-      expect(hexPattern.test(pigment.hex)).toBe(true);
+      expect(HEX_PATTERN.test(pigment.hex)).toBe(true);
       expect(families.has(pigment.family)).toBe(true);
       expect(temperatures.has(pigment.temperature)).toBe(true);
     }

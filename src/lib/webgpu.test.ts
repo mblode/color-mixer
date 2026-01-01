@@ -19,11 +19,7 @@ describe("checkWebGPUCapability", () => {
   });
 
   it("reports unsupported when navigator.gpu is missing", async () => {
-<<<<<<< HEAD
-    vi.stubGlobal("navigator", {} as Navigator);
-=======
     vi.stubGlobal("navigator", {} as unknown as Navigator);
->>>>>>> 6d5602a (Save)
 
     const result = await checkWebGPUCapability();
 
@@ -35,12 +31,10 @@ describe("checkWebGPUCapability", () => {
   });
 
   it("reports unsupported when no adapter is available", async () => {
-    const requestAdapter = vi.fn(async () => null);
-<<<<<<< HEAD
-    vi.stubGlobal("navigator", { gpu: { requestAdapter } } as Navigator);
-=======
-    vi.stubGlobal("navigator", { gpu: { requestAdapter } } as unknown as Navigator);
->>>>>>> 6d5602a (Save)
+    const requestAdapter = vi.fn(() => Promise.resolve(null));
+    vi.stubGlobal("navigator", {
+      gpu: { requestAdapter },
+    } as unknown as Navigator);
 
     const result = await checkWebGPUCapability();
 
@@ -53,12 +47,10 @@ describe("checkWebGPUCapability", () => {
   });
 
   it("reports supported when an adapter is acquired", async () => {
-    const requestAdapter = vi.fn(async () => ({}));
-<<<<<<< HEAD
-    vi.stubGlobal("navigator", { gpu: { requestAdapter } } as Navigator);
-=======
-    vi.stubGlobal("navigator", { gpu: { requestAdapter } } as unknown as Navigator);
->>>>>>> 6d5602a (Save)
+    const requestAdapter = vi.fn(() => Promise.resolve({}));
+    vi.stubGlobal("navigator", {
+      gpu: { requestAdapter },
+    } as unknown as Navigator);
 
     const result = await checkWebGPUCapability();
 
@@ -71,14 +63,12 @@ describe("checkWebGPUCapability", () => {
   });
 
   it("surfaces adapter errors from the WebGPU API", async () => {
-    const requestAdapter = vi.fn(async () => {
-      throw new Error("adapter failed");
-    });
-<<<<<<< HEAD
-    vi.stubGlobal("navigator", { gpu: { requestAdapter } } as Navigator);
-=======
-    vi.stubGlobal("navigator", { gpu: { requestAdapter } } as unknown as Navigator);
->>>>>>> 6d5602a (Save)
+    const requestAdapter = vi.fn(() =>
+      Promise.reject(new Error("adapter failed"))
+    );
+    vi.stubGlobal("navigator", {
+      gpu: { requestAdapter },
+    } as unknown as Navigator);
 
     const result = await checkWebGPUCapability();
 
@@ -90,14 +80,10 @@ describe("checkWebGPUCapability", () => {
   });
 
   it("handles non-error rejections defensively", async () => {
-    const requestAdapter = vi.fn(async () => {
-      throw "unexpected";
-    });
-<<<<<<< HEAD
-    vi.stubGlobal("navigator", { gpu: { requestAdapter } } as Navigator);
-=======
-    vi.stubGlobal("navigator", { gpu: { requestAdapter } } as unknown as Navigator);
->>>>>>> 6d5602a (Save)
+    const requestAdapter = vi.fn(() => Promise.reject("unexpected"));
+    vi.stubGlobal("navigator", {
+      gpu: { requestAdapter },
+    } as unknown as Navigator);
 
     const result = await checkWebGPUCapability();
 
