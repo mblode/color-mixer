@@ -11,6 +11,7 @@
  */
 
 import { Color, mix as spectralMix } from "spectral.js";
+
 import {
   type MixEngine,
   type PaintComponent,

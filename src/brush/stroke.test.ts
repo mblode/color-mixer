@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { Stroke } from "./stroke";
 import type { BrushSettings, Dab, StrokeSample } from "./types";
 

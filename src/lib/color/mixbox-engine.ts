@@ -12,6 +12,7 @@
  */
 
 import mixbox from "mixbox";
+
 import {
   type MixEngine,
   type PaintComponent,
@@ -29,7 +30,7 @@ export class MixboxEngine implements MixEngine {
     }
 
     const latentSize = mixbox.LATENT_SIZE;
-    const accumulated = new Array<number>(latentSize).fill(0);
+    const accumulated = Array.from({ length: latentSize }, () => 0);
     let totalWeight = 0;
 
     for (const component of components) {

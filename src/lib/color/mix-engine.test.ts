@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { deltaE, rgbToLab } from "./delta-e";
 import { lerpMix, type MixEngine } from "./mix-engine";
 import { MixboxEngine } from "./mixbox-engine";

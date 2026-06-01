@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import { FluidSimulation } from "../simulation/fluid";
 import type { BrushInput, SimulationStatus } from "../simulation/types";
 import { Button } from "./ui/button";

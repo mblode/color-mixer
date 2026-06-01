@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { ciede2000, deltaE, type Lab, rgbToLab } from "./delta-e";
 
 // Reference pairs from Sharma, Wu & Dalal (2005), "The CIEDE2000 Color-

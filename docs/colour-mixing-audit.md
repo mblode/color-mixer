@@ -6,11 +6,11 @@ A technical audit of the paint-mixing colour algorithm in this WebGPU paint app 
 
 ## 1. Executive summary
 
-The app mixes paint using [Mixbox](https://scrtwpns.com/mixbox/) (Sochorová & Jamriška, *Practical Pigment Mixing for Digital Painting*, SIGGRAPH Asia 2021) in a 7-component latent space. Latent values are accumulated per-pixel into two `rgba16float` ping-pong textures and decoded back to colour in a fragment shader.
+The app mixes paint using [Mixbox](https://scrtwpns.com/mixbox/) (Sochorová & Jamriška, _Practical Pigment Mixing for Digital Painting_, SIGGRAPH Asia 2021) in a 7-component latent space. Latent values are accumulated per-pixel into two `rgba16float` ping-pong textures and decoded back to colour in a fragment shader.
 
 **Verdict: the Mixbox latent math itself is implemented correctly.** The pipeline accumulates `latent += pigment · deposit` alongside a weight accumulator, then divides by total weight at render time. This is a valid convex blend and is exactly the officially-sanctioned N-colour weighted-average form:
 
-$$ \text{mix} = G\!\left( \frac{\sum_i w_i \cdot F(\text{RGB}_i)}{\sum_i w_i} \right) $$
+$$ \text{mix} = G\!\left( \frac{\sum_i w_i \cdot F(\text{RGB}\_i)}{\sum_i w_i} \right) $$
 
 where `F` is `rgbToLatent` (RGB → latent), `G` is the latent → RGB decode (polynomial + residual), and `wᵢ` are the per-deposit weights. Because the decode is applied **once**, after a weighted average in latent space, the result is a genuine Mixbox mix rather than a naive RGB average.
 
@@ -54,18 +54,18 @@ Reference pigment definitions and the display palette live in [`src/lib/pigments
 
 Severity-ranked. P0 = physically wrong / visible artefact, P1 = significant accuracy loss, P2 = correctness/maintainability, P3 = legal / dead code.
 
-| #   | Severity | Finding | Location |
-| --- | -------- | ------- | -------- |
-| F1  | P0 | Compositing done in sRGB (gamma) space — `color = bg*(1-cov) + paint*cov` on a non-sRGB canvas format → dark/muddy soft-brush edges, hue shifts. Must blend in linear light. | `fluid.ts` render frag ~901; canvas format `getPreferredCanvasFormat()` ~115 |
-| F2  | P0 | Watercolor model but opaque (oil/acrylic) intended — thin paint lerps toward white (`coverage=clamp(weight)`, `bg=white`) → desaturates where opaque paint should stay full chroma. | `fluid.ts` ~899–901 |
-| F3  | P0 | No tinting strength — Mixbox mixes every colour with equal power; real phthalo blue overpowers titanium white at a fraction of the volume. | `fluid.ts` paint shader deposit ~760–764 |
-| F4  | P1 | FP16 accumulation precision — latent0/1 and unbounded `.w` weight accumulate many small deposits in `rgba16float` (10-bit mantissa); near 1.0 the step is ~0.001 so small deposits round away. | `fluid.ts` texture alloc ~249–290 |
-| F5  | P1 | Frame-rate-dependent deposition — fixed deposit per frame regardless of pointer speed/Δt → slow strokes over-deposit, fast under-deposit, overlaps double-deposit. Should be distance-dosed (MyPaint `dabs_per_actual_radius`). | `fluid.ts` paint shader ~759–760 |
-| F6  | P2 | Palette uses display primaries not pigments — `#235CFF`, `#FFE300` are screen primaries, far more saturated than real paint. | `pigments.ts` 14–63 |
-| F7  | P2 | Latent padded to 8 components; only 0–6 meaningful; `mixbox.d.ts` missing `latentToRgb`/`LATENT_SIZE`. | `lib/mixbox.ts`, `types/mixbox.d.ts` |
-| F8  | P2 | No mixing tests validating ground truth. | (none) |
-| F9  | P3 | Mixbox licence is CC BY-NC (non-commercial); `spectral.js` is MIT. | dependency `mixbox@2.0.0` |
-| F10 | P3 | Diffusion shader is dead (`DIFFUSION_STRENGTH=0`); no wet-on-wet transport. | `fluid.ts` line 10, 549 |
+| #   | Severity | Finding                                                                                                                                                                                                                         | Location                                                                     |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| F1  | P0       | Compositing done in sRGB (gamma) space — `color = bg*(1-cov) + paint*cov` on a non-sRGB canvas format → dark/muddy soft-brush edges, hue shifts. Must blend in linear light.                                                    | `fluid.ts` render frag ~901; canvas format `getPreferredCanvasFormat()` ~115 |
+| F2  | P0       | Watercolor model but opaque (oil/acrylic) intended — thin paint lerps toward white (`coverage=clamp(weight)`, `bg=white`) → desaturates where opaque paint should stay full chroma.                                             | `fluid.ts` ~899–901                                                          |
+| F3  | P0       | No tinting strength — Mixbox mixes every colour with equal power; real phthalo blue overpowers titanium white at a fraction of the volume.                                                                                      | `fluid.ts` paint shader deposit ~760–764                                     |
+| F4  | P1       | FP16 accumulation precision — latent0/1 and unbounded `.w` weight accumulate many small deposits in `rgba16float` (10-bit mantissa); near 1.0 the step is ~0.001 so small deposits round away.                                  | `fluid.ts` texture alloc ~249–290                                            |
+| F5  | P1       | Frame-rate-dependent deposition — fixed deposit per frame regardless of pointer speed/Δt → slow strokes over-deposit, fast under-deposit, overlaps double-deposit. Should be distance-dosed (MyPaint `dabs_per_actual_radius`). | `fluid.ts` paint shader ~759–760                                             |
+| F6  | P2       | Palette uses display primaries not pigments — `#235CFF`, `#FFE300` are screen primaries, far more saturated than real paint.                                                                                                    | `pigments.ts` 14–63                                                          |
+| F7  | P2       | Latent padded to 8 components; only 0–6 meaningful; `mixbox.d.ts` missing `latentToRgb`/`LATENT_SIZE`.                                                                                                                          | `lib/mixbox.ts`, `types/mixbox.d.ts`                                         |
+| F8  | P2       | No mixing tests validating ground truth.                                                                                                                                                                                        | (none)                                                                       |
+| F9  | P3       | Mixbox licence is CC BY-NC (non-commercial); `spectral.js` is MIT.                                                                                                                                                              | dependency `mixbox@2.0.0`                                                    |
+| F10 | P3       | Diffusion shader is dead (`DIFFUSION_STRENGTH=0`); no wet-on-wet transport.                                                                                                                                                     | `fluid.ts` line 10, 549                                                      |
 
 ### F1 — Compositing in gamma space (P0)
 
@@ -123,9 +123,9 @@ $$ R = 1 + \frac{K}{S} - \sqrt{\left(\frac{K}{S}\right)^2 + 2\frac{K}{S}} $$
 
 and mixtures combine **linearly in K and S** weighted by concentration:
 
-$$ K_{\text{mix}} = \sum_i c_i K_i, \qquad S_{\text{mix}} = \sum_i c_i S_i. $$
+$$ K*{\text{mix}} = \sum_i c_i K_i, \qquad S*{\text{mix}} = \sum_i c_i S_i. $$
 
-The **single-constant** formulation tracks only the ratio `K/S` (adequate for many opaque mixes); the **two-constant** formulation tracks `K` and `S` separately (needed when scattering varies independently, e.g. tints with white). The reason K-M gives blue + yellow → green where naive RGB averaging gives a desaturated grey is that mixing happens in *spectral absorption* space: blue paint absorbs long wavelengths, yellow absorbs short ones, and the surviving band in the middle is green. Averaging RGB triples instead cancels the chroma and lands on grey.
+The **single-constant** formulation tracks only the ratio `K/S` (adequate for many opaque mixes); the **two-constant** formulation tracks `K` and `S` separately (needed when scattering varies independently, e.g. tints with white). The reason K-M gives blue + yellow → green where naive RGB averaging gives a desaturated grey is that mixing happens in _spectral absorption_ space: blue paint absorbs long wavelengths, yellow absorbs short ones, and the surviving band in the middle is green. Averaging RGB triples instead cancels the chroma and lands on grey.
 
 - Kubelka–Munk theory: <https://en.wikipedia.org/wiki/Kubelka%E2%80%93Munk_theory>
 - K-M overview (Wikipedia, Kubelka–Munk model context): <https://en.wikipedia.org/wiki/Kubelka%E2%80%93Munk_theory>
@@ -159,7 +159,7 @@ where `T` is a per-pigment **tinting strength** — directly addressing F3.
 
 All alpha blending and filtering must happen in linear light, not gamma space (F1):
 
-- NVIDIA, *GPU Gems 3*, Ch. 24 — "The Importance of Being Linear": <https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-24-importance-being-linear>
+- NVIDIA, _GPU Gems 3_, Ch. 24 — "The Importance of Being Linear": <https://developer.nvidia.com/gpugems/gpugems3/part-iv-image-effects/chapter-24-importance-being-linear>
 - John Novak — "What every coder should know about gamma": <https://blog.johnnovak.net/2016/09/21/what-every-coder-should-know-about-gamma/>
 
 ### Reference implementations
@@ -172,16 +172,16 @@ All alpha blending and filtering must happen in linear light, not gamma space (F
 
 From the official Mixbox GLSL (<https://github.com/scrtwpns/mixbox/blob/master/shaders/mixbox.glsl>) — useful for replacing the display-primary palette (F6):
 
-| Pigment | sRGB (approx.) |
-| --- | --- |
-| Titanium White | 1.0, 1.0, 1.0 |
-| Cadmium Yellow | 0.996, 0.925, 0.0 |
-| Hansa Yellow | 0.988, 0.827, 0.0 |
-| Cadmium Red | 1.0, 0.153, 0.008 |
+| Pigment              | sRGB (approx.)      |
+| -------------------- | ------------------- |
+| Titanium White       | 1.0, 1.0, 1.0       |
+| Cadmium Yellow       | 0.996, 0.925, 0.0   |
+| Hansa Yellow         | 0.988, 0.827, 0.0   |
+| Cadmium Red          | 1.0, 0.153, 0.008   |
 | Quinacridone Magenta | 0.502, 0.008, 0.180 |
-| Ultramarine | 0.098, 0.0, 0.349 |
-| Phthalo Blue | 0.051, 0.106, 0.267 |
-| Phthalo Green | 0.0, 0.235, 0.196 |
+| Ultramarine          | 0.098, 0.0, 0.349   |
+| Phthalo Blue         | 0.051, 0.106, 0.267 |
+| Phthalo Green        | 0.0, 0.235, 0.196   |
 
 ---
 
@@ -199,7 +199,7 @@ This makes the engine swappable, lets the ΔE harness benchmark both against eac
 **Pipeline rules:**
 
 - **Linear everywhere.** Decode to linear before any blend/filter, re-encode only at present (fixes F1). Use an `*-srgb` canvas format or an explicit linear intermediate.
-- **Opaque coverage decoupled from colour.** Alpha only softens stroke edges against existing canvas content; white is a *pigment* in the mix, not paper bleed-through (fixes F2).
+- **Opaque coverage decoupled from colour.** Alpha only softens stroke edges against existing canvas content; white is a _pigment_ in the mix, not paper bleed-through (fixes F2).
 - **Tinting strength weights mixes.** Per-pigment `T` scales each contribution into the accumulator (fixes F3; native in `spectral.js`).
 - **`rgba32float` accumulators.** Removes FP16 quantisation in the weight/latent sums (fixes F4).
 - **Distance-dosed deposition.** Emit dabs at fixed spacing along the pointer path so dose is frame-rate- and resolution-independent (fixes F5).
@@ -222,43 +222,43 @@ The empirical head-to-head (ΔE across canonical mixes, performance, and visual 
 
 Measured with `npx vite-node src/lib/color/benchmark.ts` over all 55 unordered
 pigment pairs in the reference palette, mixing 50/50 with each pigment's tinting
-strength applied. ΔE00 here is the *disagreement between the two engines* on the
+strength applied. ΔE00 here is the _disagreement between the two engines_ on the
 same input — not error against a ground truth (neither engine is ground truth
 for arbitrary sRGB pigments).
 
 ### Engine agreement (50/50 mixes, 55 pairs)
 
 | Metric | ΔE00 (Mixbox vs Spectral) |
-| --- | --- |
-| Mean | 7.52 |
-| Median | 6.32 |
-| Max | 28.41 |
+| ------ | ------------------------- |
+| Mean   | 7.52                      |
+| Median | 6.32                      |
+| Max    | 28.41                     |
 
 Most divergent pairs:
 
-| Pigment A | Pigment B | ΔE00 |
-| --- | --- | --- |
-| Hansa Yellow | Ultramarine Blue | 28.41 |
-| Cadmium Yellow | Ultramarine Blue | 26.34 |
-| Phthalo Blue | Burnt Sienna | 21.12 |
-| Cobalt Blue | Burnt Sienna | 20.46 |
-| Ultramarine Blue | Burnt Sienna | 17.17 |
+| Pigment A        | Pigment B        | ΔE00  |
+| ---------------- | ---------------- | ----- |
+| Hansa Yellow     | Ultramarine Blue | 28.41 |
+| Cadmium Yellow   | Ultramarine Blue | 26.34 |
+| Phthalo Blue     | Burnt Sienna     | 21.12 |
+| Cobalt Blue      | Burnt Sienna     | 20.46 |
+| Ultramarine Blue | Burnt Sienna     | 17.17 |
 
 ### Runtime (per 2-pigment CPU mix)
 
-| Engine | µs/mix |
-| --- | --- |
-| Mixbox | 0.22 |
-| Spectral | 1.87 |
+| Engine   | µs/mix |
+| -------- | ------ |
+| Mixbox   | 0.22   |
+| Spectral | 1.87   |
 
 ### Reading the results
 
 - The engines agree to a just-noticeable level on near-neutral and same-family
   mixes, but **diverge sharply on yellow + blue** (the canonical green) and on
   earth + blue greys — the mixes where pigment behaviour matters most. Engine
-  choice is therefore a *visible* product decision, not a rounding detail.
+  choice is therefore a _visible_ product decision, not a rounding detail.
 - Both produce a green for blue+yellow (the additive-RGB failure mode is gone in
-  both); they differ on *which* green. Spectral's is the explicit Kubelka–Munk
+  both); they differ on _which_ green. Spectral's is the explicit Kubelka–Munk
   result; Mixbox's is the trained-LUT result.
 - Mixbox is ~8× faster on CPU (LUT vs spectral integration), but both are far
   below any frame budget. On the GPU the decision is reversed in cost terms:
@@ -277,6 +277,7 @@ behaviour is inspectable and tunable. `MixboxEngine` is retained behind the
 ## 8. What shipped (implementation notes)
 
 ### CPU layer (`src/lib/color/`)
+
 - `srgb.ts` — piecewise sRGB ⇄ linear transfer + hex parsing.
 - `delta-e.ts` — CIELAB + CIEDE2000 (validated against the Sharma et al. vectors).
 - `mix-engine.ts` — the `MixEngine` interface and `PaintComponent` (rgb + weight +
@@ -288,7 +289,9 @@ behaviour is inspectable and tunable. `MixboxEngine` is retained behind the
   per-pigment tinting strengths (F3, F6).
 
 ### GPU pipeline (`src/simulation/fluid.ts`)
+
 The real-time canvas was rebuilt to fix the pipeline findings:
+
 - **F1 linear compositing** — the canvas is configured with an sRGB render-target
   view (`viewFormats`), and the fragment shader composites paint over the
   substrate in **linear light**, letting the GPU gamma-encode on write. No more
@@ -307,6 +310,7 @@ The real-time canvas was rebuilt to fix the pipeline findings:
   frame-rate independent.
 
 ### Known constraint: the GPU still decodes via the Mixbox latent
+
 The GPU keeps the **Mixbox 7-component latent** as its compact per-pixel
 accumulation format because it fits two textures and its weighted-average
 mixing is provably correct. An exact `spectral.js` decode on the GPU would
