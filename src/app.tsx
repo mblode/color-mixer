@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { OIL_BRUSH } from "./brush/oil-brush";
+import type { Tool } from "./brush/types";
 import { BrushControls } from "./components/brush-controls";
 import { PigmentControls } from "./components/pigment-controls";
 import { SimulationCanvas } from "./components/simulation-canvas";
@@ -10,7 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "./components/ui/card";
-import { hexToPigmentLatent, ZERO_LATENT } from "./lib/mixbox";
+import { DEFAULT_TINTING_STRENGTH } from "./lib/color/mix-engine";
+import { hexToPigmentLatent } from "./lib/mixbox";
 import { type PigmentPreset, pigmentPalette } from "./lib/pigments";
 import {
   checkWebGPUCapability,
@@ -49,28 +52,32 @@ function App() {
   const [customHex, setCustomHex] = useState("#FF8A00");
   const [brushRadius, setBrushRadius] = useState(0.06);
   const [brushFlow, setBrushFlow] = useState(0.6);
+  const [tool, setTool] = useState<Tool>("paint");
   const customPigment = useMemo<PigmentPreset>(
     () => ({
       id: "custom",
-      name: "Custom Pigment",
+      name: "Custom pigment",
       hex: customHex,
       description: "User-picked pigment.",
       family: "neutral",
       temperature: "neutral",
+      colorIndex: null,
+      tintingStrength: DEFAULT_TINTING_STRENGTH,
     }),
     [customHex]
   );
   const pigmentLatent = useMemo(
-    () => (pigment ? hexToPigmentLatent(pigment.hex) : ZERO_LATENT),
+    () => hexToPigmentLatent(pigment.hex),
     [pigment]
   );
   const brushInput = useMemo<BrushInput>(
     () => ({
       latent: pigmentLatent,
-      radius: brushRadius,
-      flow: brushFlow,
+      settings: { ...OIL_BRUSH, size: brushRadius, flow: brushFlow },
+      tintingStrength: pigment.tintingStrength,
+      tool,
     }),
-    [brushFlow, brushRadius, pigmentLatent]
+    [brushFlow, brushRadius, pigmentLatent, pigment, tool]
   );
 
   useEffect(() => {
@@ -113,7 +120,7 @@ function App() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
         <header className="flex flex-col gap-2">
           <h1 className="font-semibold text-3xl text-foreground tracking-tight sm:text-4xl">
-            Color Mixer
+            Colour mixer
           </h1>
           {capability.status === "unsupported" ? (
             <p className="text-muted-foreground text-sm">{statusText}</p>
@@ -133,7 +140,9 @@ function App() {
               flow={brushFlow}
               onFlowChange={setBrushFlow}
               onRadiusChange={setBrushRadius}
+              onToolChange={setTool}
               radius={brushRadius}
+              tool={tool}
             />
           </div>
 

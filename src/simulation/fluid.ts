@@ -1,3 +1,7 @@
+import { OIL_BRUSH } from "../brush/oil-brush";
+import { Stroke } from "../brush/stroke";
+import type { BrushSettings, Dab, StrokeSample } from "../brush/types";
+import { DEFAULT_TINTING_STRENGTH } from "../lib/color/mix-engine";
 import { ZERO_LATENT } from "../lib/mixbox";
 import type { BrushInput, SimulationMetrics, SimulationStatus } from "./types";
 
@@ -5,9 +9,21 @@ const WORKGROUP_SIZE = 8;
 const BRUSH_FLOAT_COUNT = 44;
 const BRUSH_VEC4_COUNT = Math.ceil(BRUSH_FLOAT_COUNT / 4);
 const BRUSH_UNIFORM_SIZE = BRUSH_VEC4_COUNT * 16;
-const DEFAULT_BRUSH_FLOW = 0.6;
-const DEFAULT_BRUSH_RADIUS = 0.06;
-const DIFFUSION_STRENGTH = 0;
+
+// Latent accumulators hold an unbounded weighted sum of deposits; 16-bit float
+// loses small increments once the running sum approaches 1 (audit finding F4),
+// so the pigment buffers use full 32-bit float. textureLoad (not sampling) is
+// used to read them, which works regardless of filterability.
+const LATENT_FORMAT: GPUTextureFormat = "rgba32float";
+
+// Dab buffer: 2 vec4s per dab — (x, y, radius, flow) and (angle, _, _, _).
+const FLOATS_PER_DAB = 8;
+const MAX_DABS_PER_FRAME = 4096;
+// Per-dab deposit at the tip centre. Dabs overlap heavily (spacing ≪ diameter)
+// so a single pass builds to full coverage; tuned for opaque oil build-up.
+const STAMP_DEPOSIT = 0.32;
+// Coverage (raw deposit) at which paint is fully opaque over the substrate.
+const COVERAGE_FULL = 1;
 
 interface PingPongTexture {
   label: string;
@@ -20,14 +36,6 @@ interface PingPongTexture {
 interface SimulationCallbacks {
   onStatusChange?: (status: SimulationStatus, detail?: string) => void;
   onMetrics?: (metrics: SimulationMetrics) => void;
-}
-
-interface PointerSnapshot {
-  x: number;
-  y: number;
-  prevX: number;
-  prevY: number;
-  active: boolean;
 }
 
 const createTexture = (
@@ -57,35 +65,43 @@ export class FluidSimulation {
   private context: GPUCanvasContext | null = null;
   private device: GPUDevice | null = null;
   private queue: GPUQueue | null = null;
-  private sampler: GPUSampler | null = null;
   private presentationFormat: GPUTextureFormat = "bgra8unorm";
+  // sRGB view format used for the render target so the GPU gamma-encodes the
+  // linear-light shader output (audit finding F1).
+  private renderFormat: GPUTextureFormat = "bgra8unorm-srgb";
   private dpr = window.devicePixelRatio || 1;
   private resizeObserver: ResizeObserver | null = null;
   private animationHandle: number | null = null;
   private brushUniformBuffer: GPUBuffer | null = null;
   private readonly brushUniformData = new Float32Array(BRUSH_FLOAT_COUNT);
+  private dabBuffer: GPUBuffer | null = null;
+  private readonly dabData = new Float32Array(
+    MAX_DABS_PER_FRAME * FLOATS_PER_DAB
+  );
   private latent0Textures: PingPongTexture | null = null;
   private latent1Textures: PingPongTexture | null = null;
   private computeLayout: GPUBindGroupLayout | null = null;
   private readonly pipelines: {
-    paint?: GPUComputePipeline;
-    diffuse?: GPUComputePipeline;
+    stamp?: GPUComputePipeline;
+    smudge?: GPUComputePipeline;
     clear?: GPUComputePipeline;
     render?: GPURenderPipeline;
   } = {};
   private size = { width: 0, height: 0 };
-  private pointer: PointerSnapshot = {
-    x: 0.5,
-    y: 0.5,
-    prevX: 0.5,
-    prevY: 0.5,
-    active: false,
-  };
+
   private brushState: BrushInput = {
     latent: ZERO_LATENT,
-    radius: DEFAULT_BRUSH_RADIUS,
-    flow: DEFAULT_BRUSH_FLOW,
+    settings: OIL_BRUSH,
+    tintingStrength: DEFAULT_TINTING_STRENGTH,
+    tool: "paint",
   };
+  private stroke: Stroke | null = null;
+  private pendingDabs: Dab[] = [];
+  private dabOverflowWarned = false;
+  // Cached render bind group, invalidated whenever the latent front views change
+  // (ping-pong swap or texture reallocation) so idle frames don't reallocate it.
+  private renderBindGroup: GPUBindGroup | null = null;
+
   private lastTimestamp = 0;
   private readonly frameTimeSamples: number[] = [];
   private readonly FPS_SAMPLE_SIZE = 60;
@@ -112,7 +128,9 @@ export class FluidSimulation {
       const device = await adapter.requestDevice();
       this.device = device;
       this.queue = device.queue;
-      this.presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+      const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
+      this.presentationFormat = preferredFormat;
+      this.renderFormat = `${preferredFormat}-srgb` as GPUTextureFormat;
 
       const context = this.canvas.getContext("webgpu");
       if (!context) {
@@ -148,10 +166,12 @@ export class FluidSimulation {
     this.latent1Textures?.front.destroy();
     this.latent1Textures?.back.destroy();
     this.brushUniformBuffer?.destroy();
+    this.dabBuffer?.destroy();
   }
 
   clearSurface() {
-    this.pointer = { ...this.pointer, active: false };
+    this.stroke = null;
+    this.pendingDabs = [];
     this.clearTextures();
   }
 
@@ -174,25 +194,48 @@ export class FluidSimulation {
     this.resizeObserver.observe(this.canvas);
   }
 
-  handlePointerDown(x: number, y: number) {
-    this.pointer = { ...this.pointer, x, y, prevX: x, prevY: y, active: true };
+  /** Begin a stroke at a device-pixel sample. */
+  strokeBegin(sample: StrokeSample) {
+    const minDim = Math.max(1, Math.min(this.size.width, this.size.height));
+    this.stroke = new Stroke({
+      settings: this.activeSettings(),
+      minDimension: minDim,
+    });
+    this.enqueue(this.stroke.begin(sample));
   }
 
-  handlePointerMove(x: number, y: number) {
-    if (!this.pointer.active) {
+  /** Extend the current stroke with a new sample. */
+  strokeExtend(sample: StrokeSample) {
+    if (!this.stroke) {
+      this.strokeBegin(sample);
       return;
     }
-    this.pointer = {
-      ...this.pointer,
-      prevX: this.pointer.x,
-      prevY: this.pointer.y,
-      x,
-      y,
-    };
+    this.enqueue(this.stroke.extend(sample));
   }
 
-  handlePointerUp() {
-    this.pointer = { ...this.pointer, active: false };
+  /** End the current stroke. */
+  strokeEnd() {
+    this.stroke?.end();
+    this.stroke = null;
+  }
+
+  private activeSettings(): BrushSettings {
+    return this.brushState.settings;
+  }
+
+  private enqueue(dabs: Dab[]) {
+    for (const dab of dabs) {
+      if (this.pendingDabs.length >= MAX_DABS_PER_FRAME) {
+        if (!this.dabOverflowWarned) {
+          this.dabOverflowWarned = true;
+          console.warn(
+            `Brush dab buffer full (${MAX_DABS_PER_FRAME}); extra dabs dropped this frame.`
+          );
+        }
+        break;
+      }
+      this.pendingDabs.push(dab);
+    }
   }
 
   private configureContext() {
@@ -202,6 +245,7 @@ export class FluidSimulation {
     this.context.configure({
       device: this.device,
       format: this.presentationFormat,
+      viewFormats: [this.renderFormat],
       alphaMode: "premultiplied",
     });
     this.handleResize(
@@ -228,7 +272,6 @@ export class FluidSimulation {
     this.size = { width: pixelWidth, height: pixelHeight };
 
     this.allocateTextures();
-    this.updateBrushUniform(this.lastTimestamp);
   }
 
   private allocateTextures() {
@@ -246,50 +289,69 @@ export class FluidSimulation {
       GPUTextureUsage.COPY_DST |
       GPUTextureUsage.STORAGE_BINDING;
 
-    this.latent0Textures = {
-      label: "latent0",
-      format: "rgba16float",
+    const makePair = (label: string): PingPongTexture => ({
+      label,
+      format: LATENT_FORMAT,
       usage,
       front: createTexture(
-        this.device,
-        "latent0-front",
-        "rgba16float",
+        this.device!,
+        `${label}-front`,
+        LATENT_FORMAT,
         usage,
         this.size.width,
         this.size.height
       ),
       back: createTexture(
-        this.device,
-        "latent0-back",
-        "rgba16float",
+        this.device!,
+        `${label}-back`,
+        LATENT_FORMAT,
         usage,
         this.size.width,
         this.size.height
       ),
-    };
-    this.latent1Textures = {
-      label: "latent1",
-      format: "rgba16float",
-      usage,
-      front: createTexture(
-        this.device,
-        "latent1-front",
-        "rgba16float",
-        usage,
-        this.size.width,
-        this.size.height
-      ),
-      back: createTexture(
-        this.device,
-        "latent1-back",
-        "rgba16float",
-        usage,
-        this.size.width,
-        this.size.height
-      ),
-    };
+    });
+
+    this.latent0Textures = makePair("latent0");
+    this.latent1Textures = makePair("latent1");
+    this.renderBindGroup = null;
 
     this.clearTextures();
+  }
+
+  private swapLatentTextures() {
+    if (this.latent0Textures) {
+      swapPingPong(this.latent0Textures);
+    }
+    if (this.latent1Textures) {
+      swapPingPong(this.latent1Textures);
+    }
+    this.renderBindGroup = null;
+  }
+
+  private computeBindGroup(): GPUBindGroup | undefined {
+    if (
+      !(
+        this.device &&
+        this.computeLayout &&
+        this.latent0Textures &&
+        this.latent1Textures &&
+        this.brushUniformBuffer &&
+        this.dabBuffer
+      )
+    ) {
+      return;
+    }
+    return this.device.createBindGroup({
+      layout: this.computeLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.brushUniformBuffer } },
+        { binding: 1, resource: this.latent0Textures.front.createView() },
+        { binding: 2, resource: this.latent0Textures.back.createView() },
+        { binding: 3, resource: this.latent1Textures.front.createView() },
+        { binding: 4, resource: this.latent1Textures.back.createView() },
+        { binding: 5, resource: { buffer: this.dabBuffer } },
+      ],
+    });
   }
 
   private clearTextures() {
@@ -299,9 +361,6 @@ export class FluidSimulation {
         this.queue &&
         this.latent0Textures &&
         this.latent1Textures &&
-        this.computeLayout &&
-        this.brushUniformBuffer &&
-        this.sampler &&
         this.pipelines.clear
       )
     ) {
@@ -312,26 +371,19 @@ export class FluidSimulation {
       label: "pigment-clear",
     });
     const runClear = () => {
-      const bindGroup = this.device?.createBindGroup({
-        layout: this.computeLayout!,
-        entries: [
-          { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
-          { binding: 1, resource: this.sampler! },
-          { binding: 2, resource: this.latent0Textures!.front.createView() },
-          { binding: 3, resource: this.latent0Textures!.back.createView() },
-          { binding: 4, resource: this.latent1Textures!.front.createView() },
-          { binding: 5, resource: this.latent1Textures!.back.createView() },
-        ],
-      });
+      const bindGroup = this.computeBindGroup();
+      if (!bindGroup) {
+        return;
+      }
       const pass = encoder.beginComputePass({ label: "pigment-clear-pass" });
       pass.setPipeline(this.pipelines.clear!);
       pass.setBindGroup(0, bindGroup);
-      const workgroupX = Math.ceil(this.size.width / WORKGROUP_SIZE);
-      const workgroupY = Math.ceil(this.size.height / WORKGROUP_SIZE);
-      pass.dispatchWorkgroups(workgroupX, workgroupY);
+      pass.dispatchWorkgroups(
+        Math.ceil(this.size.width / WORKGROUP_SIZE),
+        Math.ceil(this.size.height / WORKGROUP_SIZE)
+      );
       pass.end();
-      swapPingPong(this.latent0Textures!);
-      swapPingPong(this.latent1Textures!);
+      this.swapLatentTextures();
     };
 
     runClear();
@@ -343,17 +395,15 @@ export class FluidSimulation {
     if (!this.device) {
       return;
     }
-    this.sampler = this.device.createSampler({
-      magFilter: "linear",
-      minFilter: "linear",
-      addressModeU: "clamp-to-edge",
-      addressModeV: "clamp-to-edge",
-    });
-
     this.brushUniformBuffer = this.device.createBuffer({
       label: "brush-uniform",
       size: BRUSH_UNIFORM_SIZE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.dabBuffer = this.device.createBuffer({
+      label: "dab-buffer",
+      size: this.dabData.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
     this.computeLayout = this.device.createBindGroupLayout({
@@ -366,38 +416,38 @@ export class FluidSimulation {
         {
           binding: 1,
           visibility: GPUShaderStage.COMPUTE,
-          sampler: { type: "filtering" },
+          texture: { sampleType: "unfilterable-float" },
         },
         {
           binding: 2,
           visibility: GPUShaderStage.COMPUTE,
-          texture: { sampleType: "float" },
+          storageTexture: { access: "write-only", format: LATENT_FORMAT },
         },
         {
           binding: 3,
           visibility: GPUShaderStage.COMPUTE,
-          storageTexture: { access: "write-only", format: "rgba16float" },
+          texture: { sampleType: "unfilterable-float" },
         },
         {
           binding: 4,
           visibility: GPUShaderStage.COMPUTE,
-          texture: { sampleType: "float" },
+          storageTexture: { access: "write-only", format: LATENT_FORMAT },
         },
         {
           binding: 5,
           visibility: GPUShaderStage.COMPUTE,
-          storageTexture: { access: "write-only", format: "rgba16float" },
+          buffer: { type: "read-only-storage" },
         },
       ],
     });
 
-    this.pipelines.paint = this.createComputePipeline(
-      "paint",
-      this.getPaintShader()
+    this.pipelines.stamp = this.createComputePipeline(
+      "stamp",
+      this.getStampShader()
     );
-    this.pipelines.diffuse = this.createComputePipeline(
-      "diffuse",
-      this.getDiffuseShader()
+    this.pipelines.smudge = this.createComputePipeline(
+      "smudge",
+      this.getSmudgeShader()
     );
     this.pipelines.clear = this.createComputePipeline(
       "clear",
@@ -410,7 +460,7 @@ export class FluidSimulation {
 
   private createComputePipeline(label: string, code: string) {
     if (!(this.device && this.computeLayout)) {
-      return undefined;
+      return;
     }
     return this.device.createComputePipeline({
       label,
@@ -429,24 +479,19 @@ export class FluidSimulation {
 
   private createRenderPipeline() {
     if (!this.device) {
-      return undefined;
+      return;
     }
     const bindGroupLayout = this.device.createBindGroupLayout({
       entries: [
         {
           binding: 0,
           visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: "filtering" },
+          texture: { sampleType: "unfilterable-float" },
         },
         {
           binding: 1,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: "float" },
-        },
-        {
-          binding: 2,
-          visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: "float" },
+          texture: { sampleType: "unfilterable-float" },
         },
       ],
     });
@@ -467,7 +512,7 @@ export class FluidSimulation {
           code: this.getRenderFragmentShader(),
         }),
         entryPoint: "main",
-        targets: [{ format: this.presentationFormat }],
+        targets: [{ format: this.renderFormat }],
       },
       primitive: { topology: "triangle-list" },
     });
@@ -498,92 +543,86 @@ export class FluidSimulation {
     const delta = this.lastTimestamp === 0 ? 0 : timestamp - this.lastTimestamp;
     this.lastTimestamp = timestamp;
 
-    this.updateBrushUniform(timestamp);
-
     const encoder = this.device.createCommandEncoder({
-      label: "fluid-simulation-encoder",
+      label: "brush-encoder",
     });
-    const normalizedFlow = Number.isFinite(this.brushState.flow)
-      ? this.brushState.flow
-      : DEFAULT_BRUSH_FLOW;
-    const shouldPaint = this.pointer.active && normalizedFlow > 0;
 
-    const runPipeline = (pipeline?: GPUComputePipeline) => {
-      if (
-        !(
-          pipeline &&
-          this.computeLayout &&
-          this.sampler &&
-          this.latent0Textures &&
-          this.latent1Textures
-        )
-      ) {
-        return;
+    // The brush uniform and dab buffer are only read by the stamp/smudge pass,
+    // so skip those GPU uploads entirely on idle frames (no dabs this frame).
+    const dabCount = Math.min(this.pendingDabs.length, MAX_DABS_PER_FRAME);
+    if (dabCount > 0) {
+      this.uploadDabs(dabCount);
+      this.updateBrushUniform(dabCount);
+      const tool = this.brushState.tool;
+      const brushPipeline =
+        tool === "smudge" ? this.pipelines.smudge : this.pipelines.stamp;
+      const bindGroup = this.computeBindGroup();
+      if (brushPipeline && bindGroup) {
+        const pass = encoder.beginComputePass({ label: `${tool}-pass` });
+        pass.setPipeline(brushPipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(
+          Math.ceil(this.size.width / WORKGROUP_SIZE),
+          Math.ceil(this.size.height / WORKGROUP_SIZE)
+        );
+        pass.end();
+        this.swapLatentTextures();
       }
-      const bindGroup = this.device?.createBindGroup({
-        layout: this.computeLayout,
-        entries: [
-          { binding: 0, resource: { buffer: this.brushUniformBuffer! } },
-          { binding: 1, resource: this.sampler },
-          { binding: 2, resource: this.latent0Textures!.front.createView() },
-          { binding: 3, resource: this.latent0Textures!.back.createView() },
-          { binding: 4, resource: this.latent1Textures!.front.createView() },
-          { binding: 5, resource: this.latent1Textures!.back.createView() },
-        ],
-      });
-
-      const pass = encoder.beginComputePass({ label: pipeline.label });
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
-      const workgroupX = Math.ceil(this.size.width / WORKGROUP_SIZE);
-      const workgroupY = Math.ceil(this.size.height / WORKGROUP_SIZE);
-      pass.dispatchWorkgroups(workgroupX, workgroupY);
-      pass.end();
-      swapPingPong(this.latent0Textures!);
-      swapPingPong(this.latent1Textures!);
-    };
-
-    if (shouldPaint) {
-      runPipeline(this.pipelines.paint);
     }
-    if (DIFFUSION_STRENGTH > 0) {
-      runPipeline(this.pipelines.diffuse);
+    this.pendingDabs.length = 0;
+
+    this.renderPass(encoder);
+    this.queue.submit([encoder.finish()]);
+    this.emitMetrics(delta);
+  }
+
+  private renderPass(encoder: GPUCommandEncoder) {
+    if (
+      !(
+        this.context &&
+        this.device &&
+        this.latent0Textures &&
+        this.latent1Textures
+      )
+    ) {
+      return;
     }
-
-    const currentTexture = this.context.getCurrentTexture();
-    const view = currentTexture.createView({ label: "presentation-view" });
-
     const renderPipeline = this.pipelines.render;
-    if (renderPipeline && this.sampler) {
-      const renderBindGroup = this.device.createBindGroup({
+    if (!renderPipeline) {
+      return;
+    }
+    const view = this.context.getCurrentTexture().createView({
+      label: "presentation-view",
+      format: this.renderFormat,
+    });
+    if (!this.renderBindGroup) {
+      this.renderBindGroup = this.device.createBindGroup({
         layout: renderPipeline.getBindGroupLayout(0),
         entries: [
-          { binding: 0, resource: this.sampler },
-          { binding: 1, resource: this.latent0Textures.front.createView() },
-          { binding: 2, resource: this.latent1Textures.front.createView() },
+          { binding: 0, resource: this.latent0Textures.front.createView() },
+          { binding: 1, resource: this.latent1Textures.front.createView() },
         ],
       });
-
-      const pass = encoder.beginRenderPass({
-        label: "fluid-render-pass",
-        colorAttachments: [
-          {
-            view,
-            clearValue: { r: 1, g: 1, b: 1, a: 1 },
-            loadOp: "clear",
-            storeOp: "store",
-          },
-        ],
-      });
-      pass.setPipeline(renderPipeline);
-      pass.setBindGroup(0, renderBindGroup);
-      pass.draw(6, 1, 0, 0);
-      pass.end();
     }
+    const renderBindGroup = this.renderBindGroup;
+    const pass = encoder.beginRenderPass({
+      label: "render-pass",
+      colorAttachments: [
+        {
+          view,
+          clearValue: { r: 1, g: 1, b: 1, a: 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        },
+      ],
+    });
+    pass.setPipeline(renderPipeline);
+    pass.setBindGroup(0, renderBindGroup);
+    pass.draw(6, 1, 0, 0);
+    pass.end();
+  }
 
-    this.queue.submit([encoder.finish()]);
-
-    // Calculate FPS using rolling average
+  private emitMetrics(delta: number) {
     if (delta > 0) {
       this.frameTimeSamples.push(delta);
       if (this.frameTimeSamples.length > this.FPS_SAMPLE_SIZE) {
@@ -596,7 +635,6 @@ export class FluidSimulation {
           this.frameTimeSamples.length
         : delta;
     const fps = avgFrameTime > 0 ? 1000 / avgFrameTime : 0;
-
     this.callbacks.onMetrics?.({
       frameTimeMs: delta,
       fps: Math.round(fps),
@@ -604,81 +642,49 @@ export class FluidSimulation {
     });
   }
 
-  private updateBrushUniform(timestamp: number) {
+  private uploadDabs(count: number) {
+    if (!(this.queue && this.dabBuffer) || count === 0) {
+      return;
+    }
+    const data = this.dabData;
+    for (let i = 0; i < count; i++) {
+      const dab = this.pendingDabs[i];
+      const base = i * FLOATS_PER_DAB;
+      data[base] = dab.x;
+      data[base + 1] = dab.y;
+      data[base + 2] = dab.radius;
+      data[base + 3] = dab.flow;
+      data[base + 4] = dab.angle;
+      data[base + 5] = 0;
+      data[base + 6] = 0;
+      data[base + 7] = 0;
+    }
+    this.queue.writeBuffer(this.dabBuffer, 0, data, 0, count * FLOATS_PER_DAB);
+  }
+
+  private updateBrushUniform(dabCount: number) {
     if (!(this.queue && this.brushUniformBuffer)) {
       return;
     }
-
-    const { width, height } = this.size;
-    const pointerDown = this.pointer.active ? 1 : 0;
     const latent = this.brushState.latent;
-    const radiusScale = Number.isFinite(this.brushState.radius)
-      ? this.brushState.radius
-      : DEFAULT_BRUSH_RADIUS;
-    const flow = Number.isFinite(this.brushState.flow)
-      ? this.brushState.flow
-      : DEFAULT_BRUSH_FLOW;
-    const brushRadius = Math.max(
-      1,
-      radiusScale * Math.min(width || 1, height || 1)
-    );
-    const clampedFlow = Math.min(1, Math.max(0, flow));
+    const tintingStrength = Number.isFinite(this.brushState.tintingStrength)
+      ? Math.max(0, this.brushState.tintingStrength)
+      : DEFAULT_TINTING_STRENGTH;
 
     const data = this.brushUniformData;
-    data[0] = width;
-    data[1] = height;
-    data[2] = this.pointer.x;
-    data[3] = this.pointer.y;
-
-    data[4] = this.pointer.prevX;
-    data[5] = this.pointer.prevY;
-    data[6] = pointerDown;
-    data[7] = brushRadius;
-
-    data[8] = clampedFlow;
-    data[9] = DIFFUSION_STRENGTH;
-    data[10] = timestamp * 0.001;
-    data[11] = 0;
-
-    data[12] = 0;
-    data[13] = 0;
-    data[14] = 0;
-    data[15] = 0;
-
-    data[16] = 0;
-    data[17] = 0;
-    data[18] = 0;
-    data[19] = 0;
-
-    data[20] = 0;
-    data[21] = 0;
-    data[22] = 0;
-    data[23] = 0;
-
-    data[24] = 0;
-    data[25] = 0;
-    data[26] = 0;
-    data[27] = 0;
-
+    data.fill(0);
+    data[0] = this.size.width;
+    data[1] = this.size.height;
+    data[2] = dabCount;
+    data[3] = this.activeSettings().smudgeLength;
+    data[11] = tintingStrength;
     data[28] = latent[0];
     data[29] = latent[1];
     data[30] = latent[2];
     data[31] = latent[3];
-
     data[32] = latent[4];
     data[33] = latent[5];
     data[34] = latent[6];
-    data[35] = 0;
-
-    data[36] = 0;
-    data[37] = 0;
-    data[38] = 0;
-    data[39] = 0;
-
-    data[40] = 0;
-    data[41] = 0;
-    data[42] = 0;
-    data[43] = 0;
 
     this.queue.writeBuffer(this.brushUniformBuffer, 0, data);
   }
@@ -692,11 +698,11 @@ export class FluidSimulation {
 const BRUSH_VEC4_COUNT : u32 = ${BRUSH_VEC4_COUNT}u;
 
 @group(0) @binding(0) var<uniform> brush : array<vec4<f32>, BRUSH_VEC4_COUNT>;
-@group(0) @binding(1) var linearSampler : sampler;
-@group(0) @binding(2) var latent0Src : texture_2d<f32>;
-@group(0) @binding(3) var latent0Dst : texture_storage_2d<rgba16float, write>;
-@group(0) @binding(4) var latent1Src : texture_2d<f32>;
-@group(0) @binding(5) var latent1Dst : texture_storage_2d<rgba16float, write>;
+@group(0) @binding(1) var latent0Src : texture_2d<f32>;
+@group(0) @binding(2) var latent0Dst : texture_storage_2d<${LATENT_FORMAT}, write>;
+@group(0) @binding(3) var latent1Src : texture_2d<f32>;
+@group(0) @binding(4) var latent1Dst : texture_storage_2d<${LATENT_FORMAT}, write>;
+@group(0) @binding(5) var<storage, read> dabs : array<vec4<f32>>;
 
 fn readScalar(offset : u32) -> f32 {
   let vecIndex = offset / 4u;
@@ -706,10 +712,6 @@ fn readScalar(offset : u32) -> f32 {
   if (lane == 1u) { return v.y; }
   if (lane == 2u) { return v.z; }
   return v.w;
-}
-
-fn readVec2(offset : u32) -> vec2<f32> {
-  return vec2<f32>(readScalar(offset), readScalar(offset + 1u));
 }
 
 fn readVec4(offset : u32) -> vec4<f32> {
@@ -725,77 +727,91 @@ fn inBounds(coord: vec2<u32>, dims: vec2<u32>) -> bool {
   return coord.x < dims.x && coord.y < dims.y;
 }
 
-fn texelUv(coord: vec2<u32>, dims: vec2<u32>) -> vec2<f32> {
-  return (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims);
+// Coverage / mix contribution of one dab at canvas point p — a clean, smooth
+// round tip with a soft-but-defined edge and no surface pattern.
+fn dabMask(p : vec2<f32>, center : vec2<f32>, radius : f32) -> f32 {
+  let d = p - center;
+  if (abs(d.x) > radius || abs(d.y) > radius) { return 0.0; }
+  let distN = length(d) / radius;
+  return 1.0 - smoothstep(0.55, 1.0, distN);
 }
 `;
   }
 
-  private getPaintShader() {
+  private getStampShader() {
     return `${this.getCommonShaderHeader()}
 @compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let dims = textureDimensions(latent0Dst);
   if (!inBounds(gid.xy, dims)) { return; }
-  let uv = texelUv(gid.xy, dims);
-  var latent0 = textureLoad(latent0Src, vec2<i32>(gid.xy), 0);
-  var latent1 = textureLoad(latent1Src, vec2<i32>(gid.xy), 0);
-  let resolution = readVec2(0u);
-  let pointer = readVec2(2u);
-  let prevPointer = readVec2(4u);
-  let brushMeta = readVec4(6u);
-  let flow = clamp(brushMeta.z, 0.0, 1.0);
-  if (brushMeta.x > 0.5) {
-    let p = uv * resolution;
-    let a = prevPointer;
-    let b = pointer;
-    let ab = b - a;
-    let ap = p - a;
-    let denom = max(1e-3, dot(ab, ab));
-    let t = clamp(dot(ap, ab) / denom, 0.0, 1.0);
-    let closest = a + ab * t;
-    let dist = length(p - closest);
-    let falloff = max(0.0, 1.0 - dist / max(1.0, brushMeta.y));
-    let influence = falloff * falloff;
-    let deposit = influence * 0.55 * flow;
-    let pigment0 = readVec4(28u);
-    let pigment1 = readVec4(32u);
-    latent0 = latent0 + pigment0 * deposit;
-    latent1 = vec4<f32>(latent1.xyz + pigment1.xyz * deposit, latent1.w + deposit);
+  let texel = vec2<i32>(gid.xy);
+  var latent0 = textureLoad(latent0Src, texel, 0);
+  var latent1 = textureLoad(latent1Src, texel, 0);
+
+  let p = vec2<f32>(gid.xy) + vec2<f32>(0.5);
+  let count = u32(readScalar(2u));
+  let tintingStrength = max(0.0, readScalar(11u));
+  let pigment0 = readVec4(28u);
+  let pigment1 = readVec4(32u);
+
+  for (var i = 0u; i < count; i = i + 1u) {
+    let a = dabs[i * 2u];        // x, y, radius, flow
+    let mask = dabMask(p, a.xy, max(1.0, a.z));
+    if (mask <= 0.0) { continue; }
+    let deposit = mask * a.w * ${STAMP_DEPOSIT};
+    let mixDeposit = deposit * tintingStrength;
+    latent0 = vec4<f32>(
+      latent0.xyz + pigment0.xyz * mixDeposit,
+      latent0.w + deposit
+    );
+    latent1 = vec4<f32>(
+      latent1.xyz + pigment1.xyz * mixDeposit,
+      latent1.w + mixDeposit
+    );
   }
-  textureStore(latent0Dst, vec2<i32>(gid.xy), latent0);
-  textureStore(latent1Dst, vec2<i32>(gid.xy), latent1);
+
+  textureStore(latent0Dst, texel, latent0);
+  textureStore(latent1Dst, texel, latent1);
 }`;
   }
 
-  private getDiffuseShader() {
+  private getSmudgeShader() {
     return `${this.getCommonShaderHeader()}
 @compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let dims = textureDimensions(latent0Dst);
   if (!inBounds(gid.xy, dims)) { return; }
-  let texSize = vec2<f32>(dims);
-  let uv = texelUv(gid.xy, dims);
-  let offset = 1.0 / texSize;
-  let diffusion = clamp(readScalar(9u), 0.0, 1.0);
-  let center0 = textureSampleLevel(latent0Src, linearSampler, uv, 0.0);
-  let center1 = textureSampleLevel(latent1Src, linearSampler, uv, 0.0);
-  var sum0 = center0;
-  var sum1 = center1;
-  sum0 += textureSampleLevel(latent0Src, linearSampler, uv + vec2<f32>( offset.x, 0.0), 0.0);
-  sum1 += textureSampleLevel(latent1Src, linearSampler, uv + vec2<f32>( offset.x, 0.0), 0.0);
-  sum0 += textureSampleLevel(latent0Src, linearSampler, uv + vec2<f32>(-offset.x, 0.0), 0.0);
-  sum1 += textureSampleLevel(latent1Src, linearSampler, uv + vec2<f32>(-offset.x, 0.0), 0.0);
-  sum0 += textureSampleLevel(latent0Src, linearSampler, uv + vec2<f32>(0.0,  offset.y), 0.0);
-  sum1 += textureSampleLevel(latent1Src, linearSampler, uv + vec2<f32>(0.0,  offset.y), 0.0);
-  sum0 += textureSampleLevel(latent0Src, linearSampler, uv + vec2<f32>(0.0, -offset.y), 0.0);
-  sum1 += textureSampleLevel(latent1Src, linearSampler, uv + vec2<f32>(0.0, -offset.y), 0.0);
-  let blur0 = sum0 / 5.0;
-  let blur1 = sum1 / 5.0;
-  let latent0 = mix(center0, blur0, diffusion);
-  let latent1 = mix(center1, blur1, diffusion);
-  textureStore(latent0Dst, vec2<i32>(gid.xy), latent0);
-  textureStore(latent1Dst, vec2<i32>(gid.xy), latent1);
+  let texel = vec2<i32>(gid.xy);
+  let maxCoord = vec2<i32>(dims) - vec2<i32>(1);
+  var latent0 = textureLoad(latent0Src, texel, 0);
+  var latent1 = textureLoad(latent1Src, texel, 0);
+
+  let p = vec2<f32>(gid.xy) + vec2<f32>(0.5);
+  let count = u32(readScalar(2u));
+  let smudgeLength = clamp(readScalar(3u), 0.0, 1.0);
+
+  // Smudge drags the paint from BEHIND the brush onto the current pixel. Because
+  // it lerps the accumulated latent (numerator AND weight together), the decoded
+  // colour is a spectral Kubelka-Munk mix of the two — so dragging yellow into
+  // wet blue yields green, unlike RGB smudge tools.
+  for (var i = 0u; i < count; i = i + 1u) {
+    let a = dabs[i * 2u];        // x, y, radius, flow
+    let b = dabs[i * 2u + 1u];   // angle, _, _, _
+    let radius = max(1.0, a.z);
+    let mask = dabMask(p, a.xy, radius);
+    if (mask <= 0.0) { continue; }
+    let dir = vec2<f32>(cos(b.x), sin(b.x));
+    let pickup = radius * 0.6;
+    let src = clamp(texel - vec2<i32>(dir * pickup), vec2<i32>(0), maxCoord);
+    let s0 = textureLoad(latent0Src, src, 0);
+    let s1 = textureLoad(latent1Src, src, 0);
+    let blend = clamp(smudgeLength * mask * a.w, 0.0, 1.0);
+    latent0 = mix(latent0, s0, blend);
+    latent1 = mix(latent1, s1, blend);
+  }
+
+  textureStore(latent0Dst, texel, latent0);
+  textureStore(latent1Dst, texel, latent1);
 }`;
   }
 
@@ -837,9 +853,23 @@ struct VSOut {
 
   private getRenderFragmentShader() {
     return /* wgsl */ `
-@group(0) @binding(0) var linearSampler : sampler;
-@group(0) @binding(1) var latent0Texture : texture_2d<f32>;
-@group(0) @binding(2) var latent1Texture : texture_2d<f32>;
+@group(0) @binding(0) var latent0Texture : texture_2d<f32>;
+@group(0) @binding(1) var latent1Texture : texture_2d<f32>;
+
+fn srgbChannelToLinear(c : f32) -> f32 {
+  if (c <= 0.04045) {
+    return c / 12.92;
+  }
+  return pow((c + 0.055) / 1.055, 2.4);
+}
+
+fn srgbToLinear(c : vec3<f32>) -> vec3<f32> {
+  return vec3<f32>(
+    srgbChannelToLinear(c.x),
+    srgbChannelToLinear(c.y),
+    srgbChannelToLinear(c.z)
+  );
+}
 
 fn evalPolynomial(c0: f32, c1: f32, c2: f32, c3: f32) -> vec3<f32> {
   let c00 = c0 * c0;
@@ -879,26 +909,34 @@ fn evalPolynomial(c0: f32, c1: f32, c2: f32, c3: f32) -> vec3<f32> {
   return vec3<f32>(r, g, b);
 }
 
-fn latentToColor(latent0: vec4<f32>, latent1: vec4<f32>) -> vec3<f32> {
-  let base = evalPolynomial(latent0.x, latent0.y, latent0.z, latent0.w);
-  let color = base + latent1.xyz;
-  return clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
 @fragment fn main(@location(0) uv : vec2<f32>) -> @location(0) vec4<f32> {
-  let latent0 = textureSampleLevel(latent0Texture, linearSampler, uv, 0.0);
-  let latent1 = textureSampleLevel(latent1Texture, linearSampler, uv, 0.0);
-  let weight = latent1.w;
+  let dims = textureDimensions(latent0Texture);
+  let maxCoord = vec2<i32>(dims) - vec2<i32>(1);
+  let texel = clamp(vec2<i32>(uv * vec2<f32>(dims)), vec2<i32>(0), maxCoord);
+  let latent0 = textureLoad(latent0Texture, texel, 0);
+  let latent1 = textureLoad(latent1Texture, texel, 0);
+
   let background = vec3<f32>(1.0);
-  if (weight <= 1e-5) {
+  let mixWeight = latent1.w;
+  if (mixWeight <= 1e-5) {
     return vec4<f32>(background, 1.0);
   }
-  let invWeight = 1.0 / weight;
-  let avgLatent0 = latent0 * invWeight;
-  let avgLatent1 = vec4<f32>(latent1.xyz * invWeight, 0.0);
-  let coverage = clamp(weight, 0.0, 1.0);
-  let paintColor = latentToColor(avgLatent0, avgLatent1);
-  let color = background * (1.0 - coverage) + paintColor * coverage;
+
+  let inv = 1.0 / mixWeight;
+  let c0 = latent0.x * inv;
+  let c1 = latent0.y * inv;
+  let c2 = latent0.z * inv;
+  let c3 = 1.0 - c0 - c1 - c2;
+  let residual = latent1.xyz * inv;
+  let paintSrgb = clamp(
+    evalPolynomial(c0, c1, c2, c3) + residual,
+    vec3<f32>(0.0),
+    vec3<f32>(1.0)
+  );
+
+  let coverage = clamp(latent0.w / ${COVERAGE_FULL}.0, 0.0, 1.0);
+  let paintLinear = srgbToLinear(paintSrgb);
+  let color = background * (1.0 - coverage) + paintLinear * coverage;
   return vec4<f32>(color, 1.0);
 }`;
   }

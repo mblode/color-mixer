@@ -59,17 +59,34 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
   }, [brushInput]);
 
   const pointerHandlers = useMemo(() => {
-    const getCoordinates = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    // Read the canvas rect once per event — getBoundingClientRect forces a
+    // layout, and a move event can carry dozens of coalesced samples.
+    const canvasMetrics = () => {
       const canvas = canvasRef.current;
       if (!canvas) {
         return null;
       }
-      const rect = canvas.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      const x = (event.clientX - rect.left) * dpr;
-      const y = (event.clientY - rect.top) * dpr;
-      return { x, y };
+      return {
+        rect: canvas.getBoundingClientRect(),
+        dpr: window.devicePixelRatio || 1,
+      };
     };
+
+    // Convert a native pointer sample (client coords + pressure) into a
+    // device-pixel StrokeSample for the brush engine.
+    const toSample = (
+      metrics: { rect: DOMRect; dpr: number },
+      clientX: number,
+      clientY: number,
+      pressure: number,
+      time: number
+    ) => ({
+      x: (clientX - metrics.rect.left) * metrics.dpr,
+      y: (clientY - metrics.rect.top) * metrics.dpr,
+      // Mouse reports 0.5 while a button is held; a pen reports real pressure.
+      pressure: pressure > 0 ? pressure : 0.5,
+      time,
+    });
 
     return {
       onPointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -80,14 +97,22 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         ) {
           return;
         }
-        const coords = getCoordinates(event);
-        if (!coords) {
+        const metrics = canvasMetrics();
+        if (!metrics) {
           return;
         }
         activePointerIdRef.current = event.pointerId;
         isPointerDownRef.current = true;
         canvasRef.current?.setPointerCapture(event.pointerId);
-        simulationRef.current?.handlePointerDown(coords.x, coords.y);
+        simulationRef.current?.strokeBegin(
+          toSample(
+            metrics,
+            event.clientX,
+            event.clientY,
+            event.pressure,
+            event.timeStamp
+          )
+        );
       },
       onPointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => {
         if (
@@ -97,11 +122,27 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
           return;
         }
         event.preventDefault();
-        const coords = getCoordinates(event);
-        if (!coords) {
+        const metrics = canvasMetrics();
+        if (!metrics) {
           return;
         }
-        simulationRef.current?.handlePointerMove(coords.x, coords.y);
+        // Replay every coalesced sample the browser merged into this event so
+        // fast strokes stay smooth rather than polygonal.
+        const native = event.nativeEvent;
+        const samples = native.getCoalescedEvents
+          ? native.getCoalescedEvents()
+          : [native];
+        for (const point of samples) {
+          simulationRef.current?.strokeExtend(
+            toSample(
+              metrics,
+              point.clientX,
+              point.clientY,
+              point.pressure,
+              point.timeStamp
+            )
+          );
+        }
       },
       onPointerUp: (event: ReactPointerEvent<HTMLCanvasElement>) => {
         if (
@@ -113,7 +154,7 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         isPointerDownRef.current = false;
         activePointerIdRef.current = null;
         canvasRef.current?.releasePointerCapture(event.pointerId);
-        simulationRef.current?.handlePointerUp();
+        simulationRef.current?.strokeEnd();
       },
       onPointerCancel: (event: ReactPointerEvent<HTMLCanvasElement>) => {
         if (
@@ -124,7 +165,7 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         }
         isPointerDownRef.current = false;
         activePointerIdRef.current = null;
-        simulationRef.current?.handlePointerUp();
+        simulationRef.current?.strokeEnd();
       },
       onPointerLeave: (event: ReactPointerEvent<HTMLCanvasElement>) => {
         if (
@@ -135,7 +176,7 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         }
         isPointerDownRef.current = false;
         activePointerIdRef.current = null;
-        simulationRef.current?.handlePointerUp();
+        simulationRef.current?.strokeEnd();
       },
     };
   }, []);

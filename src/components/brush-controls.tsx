@@ -1,13 +1,22 @@
 import type { ChangeEvent } from "react";
+import type { Tool } from "../brush/types";
+import { cn } from "../lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Label } from "./ui/label";
 
 export interface BrushControlsProps {
   radius: number;
   flow: number;
+  tool: Tool;
   onRadiusChange: (value: number) => void;
   onFlowChange: (value: number) => void;
+  onToolChange: (tool: Tool) => void;
 }
+
+const TOOLS: { id: Tool; label: string }[] = [
+  { id: "paint", label: "Paint" },
+  { id: "smudge", label: "Smudge" },
+];
 
 const MIN_BRUSH_RADIUS = 0.02;
 const MAX_BRUSH_RADIUS = 0.14;
@@ -28,8 +37,10 @@ const formatPercent = (
 export function BrushControls({
   radius,
   flow,
+  tool,
   onRadiusChange,
   onFlowChange,
+  onToolChange,
 }: BrushControlsProps) {
   const sizePreview = Math.round(6 + radius * 160);
 
@@ -47,6 +58,25 @@ export function BrushControls({
         <CardTitle>Brush</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="grid grid-cols-2 gap-1 rounded-full bg-muted/50 p-1">
+          {TOOLS.map((entry) => (
+            <button
+              aria-pressed={tool === entry.id}
+              className={cn(
+                "rounded-full px-3 py-1.5 font-medium text-sm transition-colors",
+                tool === entry.id
+                  ? "bg-white text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              key={entry.id}
+              onClick={() => onToolChange(entry.id)}
+              type="button"
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="brush-size">Brush size</Label>

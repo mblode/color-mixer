@@ -11,7 +11,7 @@ const HEX_PATTERN = /^#[0-9A-Fa-f]{6}$/;
 describe("pigmentPalette", () => {
   it("keeps ids unique and fields well-formed", () => {
     const ids = pigmentPalette.map((pigment) => pigment.id);
-    const families = new Set(["primary", "earth", "neutral"]);
+    const families = new Set(["white", "primary", "earth", "neutral"]);
     const temperatures = new Set(["warm", "cool", "neutral"]);
 
     expect(new Set(ids).size).toBe(ids.length);
@@ -22,6 +22,8 @@ describe("pigmentPalette", () => {
       expect(HEX_PATTERN.test(pigment.hex)).toBe(true);
       expect(families.has(pigment.family)).toBe(true);
       expect(temperatures.has(pigment.temperature)).toBe(true);
+      expect(pigment.tintingStrength).toBeGreaterThan(0);
+      expect(pigment.colorIndex).toBeTruthy();
     }
   });
 });
