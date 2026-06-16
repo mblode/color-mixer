@@ -1,0 +1,20 @@
+Color Mixer
+Copyright (c) 2026 Matthew Blode
+
+This project's own source code is licensed under the MIT License (see LICENSE).
+
+----------------------------------------------------------------------
+
+Third-party notice: Mixbox
+
+This project depends on Mixbox (https://github.com/scrtwpns/mixbox) for its
+pigment color mixing.
+
+Mixbox is © Secret Weapons (https://scrtwpns.com) and is distributed under the
+Creative Commons Attribution-NonCommercial 4.0 International license
+(CC BY-NC 4.0): https://creativecommons.org/licenses/by-nc/4.0/
+
+Because Mixbox is non-commercial, the combined work in this repository may be
+used for NON-COMMERCIAL purposes only. The MIT license on this project's own
+code does not grant any commercial rights to use Mixbox. For commercial use of
+Mixbox, obtain a commercial license from Secret Weapons.
