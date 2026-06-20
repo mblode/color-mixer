@@ -1,6 +1,6 @@
 # Colour-mixing technical audit
 
-A technical audit of the paint-mixing colour algorithm in this WebGPU paint app (Vite + React 19 + TypeScript).
+A technical audit of the paint-mixing colour algorithm in this WebGPU paint app (Next.js + React 19 + TypeScript).
 
 ---
 
@@ -22,11 +22,11 @@ where `F` is `rgbToLatent` (RGB → latent), `G` is the latent → RGB decode (p
 
 The data flow from colour selection to pixel is:
 
-1. **Hex → latent.** [`src/lib/mixbox.ts`](../src/lib/mixbox.ts) calls `mixbox.rgbToLatent(hex)` and pads the result to 8 components (`hexToPigmentLatent`, lines 24–25). Mixbox's latent is 7 meaningful values: `c0..c3` are the four pigment concentrations (which sum to 1) and the remaining 3 are RGB residuals that capture the part of the colour the four primaries cannot reproduce. The 8th slot is zero padding.
+1. **Hex → latent.** [`lib/mixbox.ts`](../lib/mixbox.ts) calls `mixbox.rgbToLatent(hex)` and pads the result to 8 components (`hexToPigmentLatent`, lines 24–25). Mixbox's latent is 7 meaningful values: `c0..c3` are the four pigment concentrations (which sum to 1) and the remaining 3 are RGB residuals that capture the part of the colour the four primaries cannot reproduce. The 8th slot is zero padding.
 
 2. **Latent → brush uniform.** The 7+1 latent is written into the brush uniform buffer and read by the compute shader as two `vec4`s: `pigment0` (`c0..c3`) and `pigment1` (`residual.xyz` + an unused `.w`).
 
-3. **Accumulation (paint compute shader).** In `getPaintShader()` ([`src/simulation/fluid.ts`](../src/simulation/fluid.ts), ~line 734) the per-pixel deposit is computed (`let deposit = influence * 0.55 * flow;`, ~line 760) and added into the two latent storage textures:
+3. **Accumulation (paint compute shader).** In `getPaintShader()` ([`simulation/fluid.ts`](../simulation/fluid.ts), ~line 734) the per-pixel deposit is computed (`let deposit = influence * 0.55 * flow;`, ~line 760) and added into the two latent storage textures:
 
    ```wgsl
    latent0 = latent0 + pigment0 * deposit;                              // c0..c3
@@ -36,7 +36,7 @@ The data flow from colour selection to pixel is:
 
    `latent1.w` is the running sum of deposits — the `Σ wᵢ` denominator. Both textures are `rgba16float` ping-pong pairs (allocated ~lines 249–290).
 
-4. **Decode (render fragment shader).** `getRenderFragmentShader()` ([`src/simulation/fluid.ts`](../src/simulation/fluid.ts), ~lines 838–904) reads the accumulators, divides by `weight` to recover the averaged latent, evaluates a 20-term polynomial (`evalPolynomial`, ~line 844, called ~line 883) plus the residual to produce sRGB, and then composites against a white background:
+4. **Decode (render fragment shader).** `getRenderFragmentShader()` ([`simulation/fluid.ts`](../simulation/fluid.ts), ~lines 838–904) reads the accumulators, divides by `weight` to recover the averaged latent, evaluates a 20-term polynomial (`evalPolynomial`, ~line 844, called ~line 883) plus the residual to produce sRGB, and then composites against a white background:
 
    ```wgsl
    let weight   = latent1.w;
@@ -46,7 +46,7 @@ The data flow from colour selection to pixel is:
    let color    = background * (1.0 - coverage) + paintColor * coverage; // ~line 901
    ```
 
-Reference pigment definitions and the display palette live in [`src/lib/pigments.ts`](../src/lib/pigments.ts).
+Reference pigment definitions and the display palette live in [`lib/pigments.ts`](../lib/pigments.ts).
 
 ---
 
@@ -91,11 +91,11 @@ The deposit applied per frame is fixed (`influence * 0.55 * flow`, ~lines 759–
 
 ### F6 — Palette uses display primaries, not pigments (P2)
 
-The palette in [`pigments.ts`](../src/lib/pigments.ts) (lines 14–63) is built from screen primaries such as `#235CFF` (primary blue) and `#FFE300` (primary yellow). These are near the sRGB gamut boundary — far more saturated than any real paint. Feeding them through Mixbox produces mixes that are technically correct for those inputs but unlike anything a painter would see on a palette, because no physical pigment sits that close to the display primaries. Replacing them with measured pigment sRGB values (the Mixbox reference set in section 4 — titanium white, cadmium yellow, quinacridone magenta, ultramarine, phthalo blue/green, etc.) immediately makes mixes look like real paint.
+The palette in [`pigments.ts`](../lib/pigments.ts) (lines 14–63) is built from screen primaries such as `#235CFF` (primary blue) and `#FFE300` (primary yellow). These are near the sRGB gamut boundary — far more saturated than any real paint. Feeding them through Mixbox produces mixes that are technically correct for those inputs but unlike anything a painter would see on a palette, because no physical pigment sits that close to the display primaries. Replacing them with measured pigment sRGB values (the Mixbox reference set in section 4 — titanium white, cadmium yellow, quinacridone magenta, ultramarine, phthalo blue/green, etc.) immediately makes mixes look like real paint.
 
 ### F7 — Latent padding and incomplete type declarations (P2)
 
-`hexToPigmentLatent` pads Mixbox's latent to 8 components ([`lib/mixbox.ts`](../src/lib/mixbox.ts), lines 13–25) while only indices 0–6 are meaningful; the 8th is dead. More importantly, [`types/mixbox.d.ts`](../src/types/mixbox.d.ts) only declares `lerp` and `rgbToLatent` — it is missing `latentToRgb` and the `LATENT_SIZE` constant that the real package exports. Any future code that needs the inverse decode in JS (e.g. for tests or a CPU reference) has no typed entry point and would have to cast through `any`, defeating the type-safety goal. The declaration should mirror the package's actual surface.
+`hexToPigmentLatent` pads Mixbox's latent to 8 components ([`lib/mixbox.ts`](../lib/mixbox.ts), lines 13–25) while only indices 0–6 are meaningful; the 8th is dead. More importantly, [`types/mixbox.d.ts`](../types/mixbox.d.ts) only declares `lerp` and `rgbToLatent` — it is missing `latentToRgb` and the `LATENT_SIZE` constant that the real package exports. Any future code that needs the inverse decode in JS (e.g. for tests or a CPU reference) has no typed entry point and would have to cast through `any`, defeating the type-safety goal. The declaration should mirror the package's actual surface.
 
 ### F8 — No ground-truth mixing tests (P2)
 
@@ -107,7 +107,7 @@ The `mixbox@2.0.0` dependency is licensed **CC BY-NC** (non-commercial). Any com
 
 ### F10 — Dead diffusion shader (P3)
 
-`DIFFUSION_STRENGTH` is hard-coded to `0` ([`fluid.ts`](../src/simulation/fluid.ts) line 10) and gated everywhere it is used (`if (DIFFUSION_STRENGTH > 0)`, line 549; written to a uniform at line 639). The diffusion/transport pass therefore never runs, so there is no wet-on-wet pigment movement — strokes are purely local deposits. Not a bug, but a disabled feature worth either wiring up (with a non-zero strength and validation) or removing to reduce dead surface area.
+`DIFFUSION_STRENGTH` is hard-coded to `0` ([`fluid.ts`](../simulation/fluid.ts) line 10) and gated everywhere it is used (`if (DIFFUSION_STRENGTH > 0)`, line 549; written to a uniform at line 639). The diffusion/transport pass therefore never runs, so there is no wet-on-wet pigment movement — strokes are purely local deposits. Not a bug, but a disabled feature worth either wiring up (with a non-zero strength and validation) or removing to reduce dead surface area.
 
 ---
 
@@ -220,7 +220,7 @@ The empirical head-to-head (ΔE across canonical mixes, performance, and visual 
 
 ## 7. Engine benchmark
 
-Measured with `npx vite-node src/lib/color/benchmark.ts` over all 55 unordered
+Measured with `npx tsx lib/color/benchmark.ts` over all 55 unordered
 pigment pairs in the reference palette, mixing 50/50 with each pigment's tinting
 strength applied. ΔE00 here is the _disagreement between the two engines_ on the
 same input — not error against a ground truth (neither engine is ground truth
@@ -276,7 +276,7 @@ behaviour is inspectable and tunable. `MixboxEngine` is retained behind the
 
 ## 8. What shipped (implementation notes)
 
-### CPU layer (`src/lib/color/`)
+### CPU layer (`lib/color/`)
 
 - `srgb.ts` — piecewise sRGB ⇄ linear transfer + hex parsing.
 - `delta-e.ts` — CIELAB + CIEDE2000 (validated against the Sharma et al. vectors).
@@ -284,11 +284,11 @@ behaviour is inspectable and tunable. `MixboxEngine` is retained behind the
   tinting strength).
 - `mixbox-engine.ts` / `spectral-engine.ts` — the two engines; `spectral.js` is the
   recommended production engine, Mixbox the reference.
-- `benchmark.ts` — `npx vite-node src/lib/color/benchmark.ts` reproduces §7.
+- `benchmark.ts` — `npx tsx lib/color/benchmark.ts` reproduces §7.
 - `pigments.ts` — measured/reference pigment masstones, Colour Index codes, and
   per-pigment tinting strengths (F3, F6).
 
-### GPU pipeline (`src/simulation/fluid.ts`)
+### GPU pipeline (`simulation/fluid.ts`)
 
 The real-time canvas was rebuilt to fix the pipeline findings:
 

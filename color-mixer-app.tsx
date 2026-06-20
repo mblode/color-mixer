@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useMemo, useState } from "react";
 
 import { OIL_BRUSH } from "./brush/oil-brush";

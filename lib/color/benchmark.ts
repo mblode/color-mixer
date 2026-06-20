@@ -1,7 +1,7 @@
 /**
  * Engine benchmark: Mixbox vs Spectral across the reference palette.
  *
- * Run with:  npx vite-node src/lib/color/benchmark.ts
+ * Run with:  npx tsx lib/color/benchmark.ts
  *
  * Reports (1) how far the two engines disagree on 50/50 pigment mixes in ΔE00,
  * and (2) per-mix runtime. Output is Markdown, intended to be pasted into the

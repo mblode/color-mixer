@@ -43,10 +43,6 @@
     );
   }
 
-  #app {
-    @apply min-h-screen;
-  }
-
   ul,
   ol {
     @apply list-none p-0 m-0;
