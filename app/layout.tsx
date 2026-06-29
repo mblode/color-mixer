@@ -3,6 +3,8 @@ import type { Metadata, Viewport } from "next";
 import { Manrope } from "next/font/google";
 import type { ReactNode } from "react";
 
+import { CraftedBy } from "../components/crafted-by";
+
 import "./globals.css";
 
 const manrope = Manrope({
@@ -74,7 +76,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en-GB">
-      <body className={manrope.variable}>{children}</body>
+      <body className={manrope.variable}>
+        {children}
+        <footer className="flex justify-center px-6 py-8">
+          <CraftedBy />
+        </footer>
+      </body>
       <GoogleAnalytics gaId="G-9D3DKRFC1R" />
     </html>
   );

@@ -23,3 +23,7 @@ Color Mixer needs **WebGPU**, available in recent desktop Chrome, Edge, and Safa
 This project's own code is [MIT](./LICENSE) © Matthew Blode.
 
 It relies on **Mixbox**, which is © Secret Weapons and licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) (non-commercial). As a result, the project as a whole is for **non-commercial use only**. See [NOTICE](./NOTICE) for details.
+
+---
+
+Crafted by [<img src="https://matthewblode.com/avatar-sm.png" width="20" align="top" />](https://matthewblode.com) [Matthew Blode](https://matthewblode.com)
