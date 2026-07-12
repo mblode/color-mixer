@@ -3,7 +3,7 @@ export function CraftedBy() {
     <a
       className="inline-flex items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
       href="https://matthewblode.com"
-      rel="author noopener"
+      rel="author noreferrer"
       target="_blank"
     >
       <span>Crafted by</span>
