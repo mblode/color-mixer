@@ -7,14 +7,14 @@ export function CraftedBy() {
       target="_blank"
     >
       <span>Crafted by</span>
-      {/* External avatar; intentionally a plain img, not next/image. */}
-      {/* biome-ignore lint/performance/noImgElement: external host, fixed 20px */}
+      {/* Self-hosted avatar; intentionally a plain img, not next/image. */}
+      {/* biome-ignore lint/performance/noImgElement: self-hosted, fixed 20px */}
       <img
         alt="Matthew Blode"
         className="rounded-full"
         height={20}
         loading="lazy"
-        src="https://matthewblode.com/avatar-sm.png"
+        src="/avatar-sm.png"
         width={20}
       />
       <span>Matthew Blode</span>
