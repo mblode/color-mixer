@@ -12,7 +12,7 @@
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --write .",
-    "format:check": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "fix": "ultracite fix",
     "check": "ultracite check",
     "check:types": "tsc --noEmit",
