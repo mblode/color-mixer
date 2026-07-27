@@ -4,7 +4,7 @@ const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
   name: "Colour mixer",
-  url: "https://colormixer.app/",
+  url: "https://blode.co/color-mixer/",
   description:
     "Mix and blend colours online with an interactive colour mixer. Experiment with pigment combinations and create beautiful colour palettes in your browser.",
   applicationCategory: "DesignApplication",

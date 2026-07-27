@@ -2,7 +2,7 @@
 
 Mix and blend real pigments in your browser, like wet paint on a canvas.
 
-**→ [colormixer.app](https://colormixer.app)**
+**→ [colormixer.app](https://blode.co/color-mixer)**
 
 Most color tools just blend RGB values — which is why mixing blue and yellow on a screen gives you grey instead of green. Color Mixer uses [Mixbox](https://github.com/scrtwpns/mixbox) pigment math so colors mix the way actual paint does, and a WebGPU fluid canvas so you can smear them around in real time.
 
@@ -26,4 +26,4 @@ It relies on **Mixbox**, which is © Secret Weapons and licensed under [CC BY-NC
 
 ---
 
-Crafted by [<img src="https://matthewblode.com/avatar-circle.png" width="20" align="top" />](https://matthewblode.com) [Matthew Blode](https://matthewblode.com)
+Crafted by [<img src="https://blode.co/avatar-circle.png" width="20" align="top" />](https://blode.co) [Matthew Blode](https://blode.co)

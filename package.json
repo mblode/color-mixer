@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "preview": "next start",
-    "prepare": "lefthook install",
+    "prepare": "if [ -z \"$VERCEL\" ]; then lefthook install; fi",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --write .",
@@ -19,7 +19,6 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@next/third-parties": "^16.2.10",
     "@radix-ui/react-label": "^2.1.11",
     "@radix-ui/react-popover": "^1.1.19",
     "@radix-ui/react-separator": "^1.1.11",
@@ -29,6 +28,7 @@
     "clsx": "^2.1.1",
     "mixbox": "^2.0.0",
     "next": "^16.2.10",
+    "posthog-js": "^1.407.2",
     "react": "^19.2.7",
     "react-colorful": "^5.7.0",
     "react-dom": "^19.2.7",
