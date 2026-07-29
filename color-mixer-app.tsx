@@ -176,6 +176,47 @@ function App() {
             </Card>
           )}
         </main>
+
+        {/*
+          Below the tool rather than above it: the canvas is what people came
+          for, and this is the only prose on the page for anyone who arrives
+          without WebGPU or without JavaScript.
+        */}
+        <section className="max-w-[70ch] space-y-4 text-muted-foreground text-sm leading-relaxed">
+          <h2 className="font-medium text-base text-foreground">
+            How the mixing works
+          </h2>
+
+          <p>
+            This is a pigment mixer rather than a colour blender. Mixing colours
+            on a screen normally means averaging RGB, which is why blue and
+            yellow give you a dead grey there and give you green everywhere
+            else. Here each colour is converted into Mixbox&apos;s latent
+            pigment space and mixed in that instead, so blue dragged through
+            yellow turns green, and white pulls a colour back to a tint rather
+            than just raising its brightness.
+          </p>
+
+          <p>
+            The palette is real paint, not screen primaries. The masstones come
+            from the Mixbox reference pigment set and each one keeps its Colour
+            Index name, so cadmium yellow is PY35 and phthalo blue is PB15, the
+            same codes on the side of a real tube. The previous palette used
+            display primaries, which are more saturated than any paint you can
+            actually buy.
+          </p>
+
+          <p>
+            Every pigment also carries a tinting strength, which is the part
+            that catches people who have not painted. Phthalo blue sits at 3 and
+            titanium white at 0.5, so a small amount of phthalo swallows a large
+            amount of white and the ratios stop being symmetrical: half and half
+            on the canvas is nothing like half and half in the result. Pick two,
+            set the brush radius and flow, and drag one through the other to
+            watch it happen. The simulation runs on WebGPU, so it needs a
+            browser that has it.
+          </p>
+        </section>
       </div>
     </div>
   );
