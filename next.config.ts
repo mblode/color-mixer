@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   assetPrefix: "/color-mixer",
   basePath: "/color-mixer",
+  experimental: { turbopackRustReactCompiler: true },
   reactCompiler: true,
   redirects() {
     return Promise.resolve([

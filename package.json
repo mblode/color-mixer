@@ -27,11 +27,11 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "mixbox": "^2.0.0",
-    "next": "^16.2.10",
+    "next": "^16.3.0",
     "posthog-js": "^1.407.2",
-    "react": "^19.2.7",
+    "react": "^19.2.8",
     "react-colorful": "^5.7.0",
-    "react-dom": "^19.2.7",
+    "react-dom": "^19.2.8",
     "spectral.js": "^3.0.0",
     "tailwind-merge": "^3.6.0",
     "typegpu": "^0.11.9"
@@ -43,7 +43,6 @@
     "@vitest/ui": "^4.1.10",
     "@webgpu/types": "^0.1.71",
     "autoprefixer": "^10.5.2",
-    "babel-plugin-react-compiler": "^1.0.0",
     "globals": "^17.7.0",
     "lefthook": "^2.1.10",
     "oxfmt": "^0.58.0",
@@ -51,7 +50,7 @@
     "postcss": "^8.5.17",
     "tailwindcss": "^4.3.2",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "6.0.3",
+    "typescript": "^7.0.2",
     "ultracite": "7.9.3",
     "vitest": "^4.1.10"
   }
