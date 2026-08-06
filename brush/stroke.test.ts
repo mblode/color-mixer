@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { Stroke } from "./stroke";
+import { OIL_BRUSH } from "./oil-brush";
+import { dabRadiusAtRest, MOUSE_PRESSURE, Stroke } from "./stroke";
 import type { BrushSettings, Dab, StrokeSample } from "./types";
 
 const flat = (overrides: Partial<BrushSettings> = {}): BrushSettings => ({
@@ -125,5 +126,44 @@ describe("Stroke dab generation", () => {
     const avgRadius = (dabs: Dab[]): number =>
       dabs.reduce((sum, d) => sum + d.radius, 0) / dabs.length;
     expect(avgRadius(fast)).toBeLessThan(avgRadius(slow));
+  });
+});
+
+describe("dabRadiusAtRest", () => {
+  // The brush cursor is drawn from this, so if it disagrees with the dab the
+  // engine emits, the ring stops matching the paint.
+  const firstDabRadius = (
+    settings: BrushSettings,
+    minDimension: number,
+    pressure: number
+  ): number => {
+    const stroke = new Stroke({ settings, minDimension, seed: 7 });
+    const [dab] = stroke.begin({ x: 0, y: 0, pressure, time: 0 });
+    return dab.radius;
+  };
+
+  it("matches the radius the engine emits for a pointer at rest", () => {
+    for (const pressure of [0.25, MOUSE_PRESSURE, 1]) {
+      expect(dabRadiusAtRest(OIL_BRUSH, 1000, pressure)).toBeCloseTo(
+        firstDabRadius(OIL_BRUSH, 1000, pressure),
+        6
+      );
+    }
+  });
+
+  it("is well under the nominal size for a mouse, which cannot press harder", () => {
+    const nominal = (OIL_BRUSH.size * 1000) / 2;
+    const actual = dabRadiusAtRest(OIL_BRUSH, 1000);
+
+    // OIL_BRUSH maps pressure 0.5 to 0.675 of nominal, so a ring drawn at the
+    // nominal size is half again too big.
+    expect(actual / nominal).toBeCloseTo(0.675, 3);
+  });
+
+  it("scales with the canvas, since size is a fraction of the smaller side", () => {
+    expect(dabRadiusAtRest(OIL_BRUSH, 2000)).toBeCloseTo(
+      dabRadiusAtRest(OIL_BRUSH, 1000) * 2,
+      6
+    );
   });
 });

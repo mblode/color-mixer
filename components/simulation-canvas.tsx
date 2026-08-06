@@ -1,6 +1,7 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { dabRadiusAtRest } from "../brush/stroke";
 import { FluidSimulation } from "../simulation/fluid";
 import type { BrushInput, SimulationStatus } from "../simulation/types";
 
@@ -262,9 +263,10 @@ export function SimulationCanvas({
     return () => observer.disconnect();
   }, []);
 
-  // Stroke.baseRadius is (settings.size * minDimension) / 2 in device pixels,
-  // so the ring's CSS diameter is size * the smaller CSS dimension.
-  const ringDiameter = brushInput.settings.size * canvasMinDimension;
+  // Shared with the brush engine, and fed the CSS dimension rather than the
+  // device one so the result is already in CSS pixels.
+  const ringDiameter =
+    2 * dabRadiusAtRest(brushInput.settings, canvasMinDimension);
 
   return (
     <>
