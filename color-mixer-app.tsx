@@ -15,11 +15,19 @@ import { Button } from "./components/ui/button";
 import { DEFAULT_TINTING_STRENGTH } from "./lib/color/mix-engine";
 import { hexToPigmentLatent } from "./lib/mixbox";
 import { type PigmentPreset, pigmentPalette } from "./lib/pigments";
+import { useHotkeyLabel, useHotkeys } from "./lib/use-hotkeys";
+import { cn } from "./lib/utils";
 import {
   checkWebGPUCapability,
   type WebGPUCapabilityResult,
 } from "./lib/webgpu";
-import type { BrushInput } from "./simulation/types";
+import type { BrushInput, SimulationHistory } from "./simulation/types";
+
+const NO_HISTORY: SimulationHistory = {
+  canUndo: false,
+  canRedo: false,
+  depthLimit: 0,
+};
 
 const initialStatus: WebGPUCapabilityResult = {
   supported: false,
@@ -48,6 +56,7 @@ function App() {
   const [brushFlow, setBrushFlow] = useState(0.6);
   const [tool, setTool] = useState<Tool>("paint");
   const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [history, setHistory] = useState<SimulationHistory>(NO_HISTORY);
   const simulationHandle = useRef<SimulationHandle | null>(null);
   const customPigment = useMemo<PigmentPreset>(
     () => ({
@@ -107,10 +116,30 @@ function App() {
     simulationHandle.current?.clear();
   };
 
+  const handleUndo = useCallback(() => {
+    simulationHandle.current?.undo();
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    simulationHandle.current?.redo();
+  }, []);
+
   // Stable so SimulationCanvas's reporting effect does not re-run every render.
   const handleErrorChange = useCallback((message: string | null) => {
     setSimulationError(message);
   }, []);
+
+  const handleHistoryChange = useCallback((next: SimulationHistory) => {
+    setHistory(next);
+  }, []);
+
+  // mod+y is the Windows convention for redo; mod+shift+z is the Mac one. Both
+  // are bound everywhere because neither costs anything.
+  useHotkeys({
+    "mod+z": handleUndo,
+    "mod+shift+z": handleRedo,
+    "mod+y": handleRedo,
+  });
 
   const isChecking = capability.status === "checking";
   const isSupported = capability.status === "supported";
@@ -123,6 +152,7 @@ function App() {
           brushInput={brushInput}
           handleRef={simulationHandle}
           onErrorChange={handleErrorChange}
+          onHistoryChange={handleHistoryChange}
         />
       ) : null}
 
@@ -257,19 +287,104 @@ function App() {
               className="hidden h-14 w-px bg-black/5 lg:block"
             />
 
-            {/* Labelled, not an icon: clearing the canvas cannot be undone. */}
-            <Button
-              onClick={handleClear}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Clear
-            </Button>
+            <div className="flex items-center gap-1">
+              <IconButton
+                disabled={!history.canUndo}
+                hotkey="mod+z"
+                label="Undo"
+                onClick={handleUndo}
+              >
+                <UndoIcon />
+              </IconButton>
+              <IconButton
+                disabled={!history.canRedo}
+                hotkey="mod+shift+z"
+                label="Redo"
+                onClick={handleRedo}
+              >
+                <UndoIcon flipped />
+              </IconButton>
+              <Button
+                onClick={handleClear}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Clear
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}
     </div>
+  );
+}
+
+interface IconButtonProps {
+  children: React.ReactNode;
+  disabled?: boolean;
+  hotkey: string;
+  label: string;
+  onClick: () => void;
+}
+
+/**
+ * Icon-only, so the accessible name and the visible tooltip both spell out the
+ * action and its shortcut. Discoverability matters here: without the tooltip
+ * the shortcut is invisible, and on touch there is no keyboard at all.
+ */
+function IconButton({
+  children,
+  disabled,
+  hotkey,
+  label,
+  onClick,
+}: IconButtonProps) {
+  const { aria, label: shortcut } = useHotkeyLabel(hotkey);
+  return (
+    <button
+      aria-keyshortcuts={aria}
+      aria-label={`${label} (${shortcut})`}
+      className="group relative flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35"
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+      <span
+        className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-control bg-foreground px-2.5 py-1.5 font-medium text-[11px] text-background leading-tight group-hover:block group-focus-visible:block"
+        role="tooltip"
+      >
+        {label} <span className="font-mono text-background/70">{shortcut}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Curved arrow; mirrored for redo so the pair reads as one gesture. */
+function UndoIcon({ flipped }: { flipped?: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={cn("h-4 w-4", flipped && "-scale-x-100")}
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M9 14 4 9l5-5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M4 9h9a7 7 0 0 1 0 14H8"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
   );
 }
 
