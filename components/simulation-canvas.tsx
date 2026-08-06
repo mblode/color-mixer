@@ -2,24 +2,32 @@ import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FluidSimulation } from "../simulation/fluid";
-import type { BrushInput, SimulationStatus } from "../simulation/types";
+import type {
+  BrushInput,
+  SimulationHistory,
+  SimulationStatus,
+} from "../simulation/types";
 
 export interface SimulationHandle {
   clear: () => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 export interface SimulationCanvasProps {
   brushInput: BrushInput;
-  /** Lets the dock drive Clear, which lives outside this component now. */
+  /** Lets the dock drive Clear and undo, which live outside this component. */
   handleRef?: RefObject<SimulationHandle | null>;
   /** Surfaced in the dock rather than under the canvas. */
   onErrorChange?: (message: string | null) => void;
+  onHistoryChange?: (history: SimulationHistory) => void;
 }
 
 export function SimulationCanvas({
   brushInput,
   handleRef,
   onErrorChange,
+  onHistoryChange,
 }: SimulationCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
@@ -32,6 +40,13 @@ export function SimulationCanvas({
   const [statusDetail, setStatusDetail] = useState<string>(
     "Waiting for initialization..."
   );
+
+  // The simulation is constructed once, so its callbacks read the latest
+  // handler through a ref rather than pinning the first one forever.
+  const historyCallbackRef = useRef(onHistoryChange);
+  useEffect(() => {
+    historyCallbackRef.current = onHistoryChange;
+  }, [onHistoryChange]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -46,6 +61,7 @@ export function SimulationCanvas({
           setStatusDetail(detail);
         }
       },
+      onHistoryChange: (history) => historyCallbackRef.current?.(history),
     });
     simulationRef.current = simulation;
     simulation.attachResizeObserver();
@@ -233,6 +249,8 @@ export function SimulationCanvas({
     }
     handleRef.current = {
       clear: () => simulationRef.current?.clearSurface(),
+      undo: () => simulationRef.current?.undo(),
+      redo: () => simulationRef.current?.redo(),
     };
     return () => {
       handleRef.current = null;

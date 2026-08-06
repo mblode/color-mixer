@@ -3,7 +3,12 @@ import { Stroke } from "../brush/stroke";
 import type { BrushSettings, Dab, StrokeSample } from "../brush/types";
 import { DEFAULT_TINTING_STRENGTH } from "../lib/color/mix-engine";
 import { ZERO_LATENT } from "../lib/mixbox";
-import type { BrushInput, SimulationMetrics, SimulationStatus } from "./types";
+import type {
+  BrushInput,
+  SimulationHistory,
+  SimulationMetrics,
+  SimulationStatus,
+} from "./types";
 
 const WORKGROUP_SIZE = 8;
 const BRUSH_FLOAT_COUNT = 44;
@@ -25,6 +30,27 @@ const STAMP_DEPOSIT = 0.32;
 // Coverage (raw deposit) at which paint is fully opaque over the substrate.
 const COVERAGE_FULL = 1;
 
+// Undo snapshots are full copies of both latent textures, so at rgba32float a
+// step costs 32 bytes per device pixel. That is small on a laptop window and
+// very large on a retina 4K one, which is why depth comes from a byte budget
+// rather than a fixed count:
+//
+//   1280x800 @1x   ~26MB/step  -> 24 steps (hits MAX_HISTORY)
+//   1920x1080 @1x  ~63MB/step  -> 12 steps
+//   1920x1083 @2x  ~254MB/step -> 3 steps
+//
+// MIN_HISTORY is a floor that will overrun the budget on an absurdly large
+// canvas: being able to take back the last stroke matters more than the cap.
+const HISTORY_BYTE_BUDGET = 768 * 1024 * 1024;
+const MIN_HISTORY = 1;
+const MAX_HISTORY = 24;
+const LATENT_BYTES_PER_PIXEL = 16;
+
+interface HistoryEntry {
+  latent0: GPUTexture;
+  latent1: GPUTexture;
+}
+
 interface PingPongTexture {
   label: string;
   format: GPUTextureFormat;
@@ -36,6 +62,7 @@ interface PingPongTexture {
 interface SimulationCallbacks {
   onStatusChange?: (status: SimulationStatus, detail?: string) => void;
   onMetrics?: (metrics: SimulationMetrics) => void;
+  onHistoryChange?: (history: SimulationHistory) => void;
 }
 
 const createTexture = (
@@ -98,6 +125,9 @@ export class FluidSimulation {
   private stroke: Stroke | null = null;
   private pendingDabs: Dab[] = [];
   private dabOverflowWarned = false;
+  // Past states, oldest first. Redo holds what undo stepped back out of.
+  private undoStack: HistoryEntry[] = [];
+  private redoStack: HistoryEntry[] = [];
   // Cached render bind group, invalidated whenever the latent front views change
   // (ping-pong swap or texture reallocation) so idle frames don't reallocate it.
   private renderBindGroup: GPUBindGroup | null = null;
@@ -161,6 +191,8 @@ export class FluidSimulation {
     }
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.discardEntries(this.undoStack);
+    this.discardEntries(this.redoStack);
     this.latent0Textures?.front.destroy();
     this.latent0Textures?.back.destroy();
     this.latent1Textures?.front.destroy();
@@ -169,10 +201,189 @@ export class FluidSimulation {
     this.dabBuffer?.destroy();
   }
 
+  /** Clearing is destructive, so it goes on the undo stack like a stroke. */
   clearSurface() {
     this.stroke = null;
     this.pendingDabs = [];
+    this.captureHistory();
     this.clearTextures();
+  }
+
+  get history(): SimulationHistory {
+    return {
+      canUndo: this.undoStack.length > 0,
+      canRedo: this.redoStack.length > 0,
+      depthLimit: this.historyDepthLimit(),
+    };
+  }
+
+  /** Step back one stroke. Returns false when there is nothing to undo. */
+  undo(): boolean {
+    return this.stepHistory(this.undoStack, this.redoStack);
+  }
+
+  /** Re-apply the last undone stroke. */
+  redo(): boolean {
+    return this.stepHistory(this.redoStack, this.undoStack);
+  }
+
+  /**
+   * Snapshot the current surface. Called before anything destructive, so the
+   * top of the undo stack is always the state prior to the newest edit.
+   */
+  private captureHistory() {
+    const entry = this.snapshot();
+    if (!entry) {
+      return;
+    }
+    this.undoStack.push(entry);
+    // A new edit after undoing makes the redo branch unreachable.
+    this.discardEntries(this.redoStack);
+    // Oldest first, so trimming from the front drops the most distant past.
+    while (this.undoStack.length > this.historyDepthLimit()) {
+      this.destroyEntry(this.undoStack.shift());
+    }
+    this.emitHistory();
+  }
+
+  private stepHistory(from: HistoryEntry[], to: HistoryEntry[]): boolean {
+    const target = from.pop();
+    if (!target) {
+      return false;
+    }
+    // Snapshot where we are before moving, so the trip is reversible.
+    const current = this.snapshot();
+    if (current) {
+      to.push(current);
+    }
+    this.restore(target);
+    this.destroyEntry(target);
+    this.stroke = null;
+    this.pendingDabs = [];
+    this.emitHistory();
+    return true;
+  }
+
+  private historyDepthLimit(): number {
+    const perEntry =
+      this.size.width * this.size.height * LATENT_BYTES_PER_PIXEL * 2;
+    if (perEntry === 0) {
+      return 0;
+    }
+    return Math.max(
+      MIN_HISTORY,
+      Math.min(MAX_HISTORY, Math.floor(HISTORY_BYTE_BUDGET / perEntry))
+    );
+  }
+
+  private snapshot(): HistoryEntry | null {
+    if (
+      !(
+        this.device &&
+        this.queue &&
+        this.latent0Textures &&
+        this.latent1Textures
+      )
+    ) {
+      return null;
+    }
+
+    // Snapshots are only ever copy endpoints; they are never bound to a shader.
+    const usage = GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
+    let latent0: GPUTexture;
+    let latent1: GPUTexture;
+    try {
+      latent0 = createTexture(
+        this.device,
+        "history-latent0",
+        LATENT_FORMAT,
+        usage,
+        this.size.width,
+        this.size.height
+      );
+      latent1 = createTexture(
+        this.device,
+        "history-latent1",
+        LATENT_FORMAT,
+        usage,
+        this.size.width,
+        this.size.height
+      );
+    } catch (error) {
+      // Out of GPU memory. Losing the oldest step is a far better outcome than
+      // throwing away the stroke the user is in the middle of making.
+      if (this.undoStack.length > 0) {
+        this.destroyEntry(this.undoStack.shift());
+        console.warn("Undo snapshot failed; dropped the oldest step.", error);
+      } else {
+        console.warn("Undo snapshot failed; this step is not undoable.", error);
+      }
+      return null;
+    }
+
+    const encoder = this.device.createCommandEncoder({
+      label: "history-capture",
+    });
+    const extent = { width: this.size.width, height: this.size.height };
+    encoder.copyTextureToTexture(
+      { texture: this.latent0Textures.front },
+      { texture: latent0 },
+      extent
+    );
+    encoder.copyTextureToTexture(
+      { texture: this.latent1Textures.front },
+      { texture: latent1 },
+      extent
+    );
+    this.queue.submit([encoder.finish()]);
+
+    return { latent0, latent1 };
+  }
+
+  private restore(entry: HistoryEntry) {
+    if (
+      !(
+        this.device &&
+        this.queue &&
+        this.latent0Textures &&
+        this.latent1Textures
+      )
+    ) {
+      return;
+    }
+    const encoder = this.device.createCommandEncoder({
+      label: "history-restore",
+    });
+    const extent = { width: this.size.width, height: this.size.height };
+    // Copying into the existing front textures rather than swapping keeps the
+    // cached render and compute bind groups valid.
+    encoder.copyTextureToTexture(
+      { texture: entry.latent0 },
+      { texture: this.latent0Textures.front },
+      extent
+    );
+    encoder.copyTextureToTexture(
+      { texture: entry.latent1 },
+      { texture: this.latent1Textures.front },
+      extent
+    );
+    this.queue.submit([encoder.finish()]);
+  }
+
+  private destroyEntry(entry: HistoryEntry | undefined) {
+    entry?.latent0.destroy();
+    entry?.latent1.destroy();
+  }
+
+  private discardEntries(stack: HistoryEntry[]) {
+    for (const entry of stack) {
+      this.destroyEntry(entry);
+    }
+    stack.length = 0;
+  }
+
+  private emitHistory() {
+    this.callbacks.onHistoryChange?.(this.history);
   }
 
   updateBrushInput(input: BrushInput) {
@@ -196,6 +407,9 @@ export class FluidSimulation {
 
   /** Begin a stroke at a device-pixel sample. */
   strokeBegin(sample: StrokeSample) {
+    // Before the first dab of the stroke reaches the GPU, so the snapshot is
+    // the pre-stroke surface. Undo granularity is one stroke, not one frame.
+    this.captureHistory();
     const minDim = Math.max(1, Math.min(this.size.width, this.size.height));
     this.stroke = new Stroke({
       settings: this.activeSettings(),
@@ -282,6 +496,12 @@ export class FluidSimulation {
     this.latent0Textures?.back.destroy();
     this.latent1Textures?.front.destroy();
     this.latent1Textures?.back.destroy();
+
+    // Snapshots are sized to the old canvas, so a resize retires the history
+    // rather than restoring a mismatched copy later.
+    this.discardEntries(this.undoStack);
+    this.discardEntries(this.redoStack);
+    this.emitHistory();
 
     const usage =
       GPUTextureUsage.TEXTURE_BINDING |

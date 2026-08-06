@@ -14,6 +14,13 @@ export interface BrushInput {
   tool: Tool;
 }
 
+export interface SimulationHistory {
+  canUndo: boolean;
+  canRedo: boolean;
+  /** How many snapshots fit in the memory budget at the current canvas size. */
+  depthLimit: number;
+}
+
 export interface SimulationMetrics {
   frameTimeMs: number;
   fps: number;
