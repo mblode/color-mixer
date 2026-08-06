@@ -17,7 +17,7 @@ const PopoverContent = ({
     <Content
       align={align}
       className={cn(
-        "z-50 rounded-3xl border bg-card p-4 text-card-foreground shadow-lg outline-none",
+        "z-50 rounded-surface bg-card p-(--surface-inset) text-card-foreground shadow-lg outline-none ring-1 ring-black/5",
         "data-[state=closed]:animate-out data-[state=open]:animate-in",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",

@@ -22,7 +22,14 @@
     --border: 30 14% 86%;
     --input: 30 14% 86%;
     --ring: 352 79% 46%;
-    --radius: 1.25rem;
+    /* Two radii and a pill, nothing else. A surface (card, popover) insets
+       its children by --surface-inset, and the control radius is defined as
+       exactly what that inset leaves over. Nesting anything rounded flush
+       inside a surface is then just rounded-control, and the corners stay
+       concentric by construction rather than by eye. */
+    --radius-surface: 1.5rem;
+    --surface-inset: 0.75rem;
+    --radius-control: calc(var(--radius-surface) - var(--surface-inset));
   }
 
   * {
@@ -44,12 +51,6 @@
   ul,
   ol {
     @apply list-none p-0 m-0;
-  }
-}
-
-@layer utilities {
-  .shadow-soft {
-    box-shadow: 0 18px 50px -36px rgba(15, 10, 6, 0.4);
   }
 }
 
@@ -77,7 +78,7 @@
   border-radius: 999px;
   background: hsl(var(--foreground));
   border: 2px solid #ffffff;
-  box-shadow: 0 6px 12px rgba(15, 10, 6, 0.25);
+  box-shadow: 0 1px 3px rgba(15, 10, 6, 0.2);
 }
 
 .range::-moz-range-thumb {
@@ -86,7 +87,7 @@
   border-radius: 999px;
   background: hsl(var(--foreground));
   border: 2px solid #ffffff;
-  box-shadow: 0 6px 12px rgba(15, 10, 6, 0.25);
+  box-shadow: 0 1px 3px rgba(15, 10, 6, 0.2);
 }
 
 .range::-moz-range-track {

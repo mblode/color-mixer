@@ -5,7 +5,10 @@ import { cn } from "../../lib/utils";
 const Card = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "rounded-3xl border bg-card text-card-foreground shadow-[0_24px_70px_-50px_rgba(15,10,6,0.45)]",
+      // One shadow, defined here so consumers never stack a second one on top,
+      // and a ring rather than a solid border: a shadow plus a grey border
+      // reads as two competing edges.
+      "rounded-surface bg-card text-card-foreground shadow-[0_18px_50px_-36px_rgba(15,10,6,0.4)] ring-1 ring-black/5",
       className
     )}
     {...props}

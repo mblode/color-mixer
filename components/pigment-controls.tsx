@@ -31,7 +31,7 @@ export function PigmentControls({
   };
 
   return (
-    <Card className="shadow-soft">
+    <Card>
       <CardContent className="pt-6">
         <div className="flex flex-wrap items-center gap-2">
           <Popover
@@ -86,7 +86,7 @@ export function PigmentControls({
             </PopoverTrigger>
             <PopoverContent align="start" className="w-72" sideOffset={12}>
               <div className="space-y-3">
-                <div className="rounded-2xl bg-muted/30 p-2">
+                <div className="rounded-control bg-muted/30 p-2">
                   <HexColorPicker
                     color={customPigment.hex}
                     onChange={handleCustomChange}
@@ -94,7 +94,7 @@ export function PigmentControls({
                 </div>
                 <HexColorInput
                   aria-label="Custom pigment hex"
-                  className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 font-medium text-foreground text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="flex h-10 w-full rounded-control border border-input bg-background px-3 py-2 font-mono text-foreground text-sm uppercase transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   color={customPigment.hex}
                   onChange={handleCustomChange}
                   placeholder="#RRGGBB"
