@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FluidSimulation } from "../simulation/fluid";
 import type { BrushInput, SimulationStatus } from "../simulation/types";
 import { Button } from "./ui/button";
-import { Card, CardContent } from "./ui/card";
+import { Card } from "./ui/card";
 
 export interface SimulationCanvasProps {
   brushInput: BrushInput;
@@ -188,31 +188,24 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
 
   const showDetail = status === "error";
   return (
-    <Card className="shadow-soft">
-      <CardContent className="space-y-3 pt-6">
-        <div className="overflow-hidden rounded-3xl border bg-white shadow-inner">
-          <canvas
-            aria-label="Pigment canvas"
-            className="h-[60vh] w-full touch-none select-none"
-            onContextMenu={(event) => event.preventDefault()}
-            ref={canvasRef}
-            {...pointerHandlers}
-          />
-        </div>
-        <div className="flex items-center justify-end">
-          <Button
-            onClick={handleClear}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Clear
-          </Button>
-        </div>
+    <Card className="space-y-3 p-(--surface-inset)">
+      <div className="overflow-hidden rounded-control bg-white ring-1 ring-black/5">
+        <canvas
+          aria-label="Pigment canvas"
+          className="h-[60vh] w-full touch-none select-none"
+          onContextMenu={(event) => event.preventDefault()}
+          ref={canvasRef}
+          {...pointerHandlers}
+        />
+      </div>
+      <div className="flex items-center gap-3 px-1 pb-1">
+        <Button onClick={handleClear} size="sm" type="button" variant="outline">
+          Clear
+        </Button>
         {showDetail ? (
           <p className="text-destructive text-xs">{statusDetail}</p>
         ) : null}
-      </CardContent>
+      </div>
     </Card>
   );
 }

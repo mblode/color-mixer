@@ -176,7 +176,7 @@ function App() {
           {showCanvas ? (
             <SimulationCanvas brushInput={brushInput} />
           ) : (
-            <Card className="shadow-soft">
+            <Card>
               <CardHeader>
                 <CardTitle>WebGPU not available</CardTitle>
                 <CardDescription>Use a WebGPU-enabled browser.</CardDescription>

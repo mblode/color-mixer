@@ -54,7 +54,7 @@ export function BrushControls({
   };
 
   return (
-    <Card className="shadow-soft">
+    <Card>
       <CardHeader>
         <CardTitle>Brush</CardTitle>
       </CardHeader>
@@ -66,7 +66,7 @@ export function BrushControls({
               className={cn(
                 "rounded-full px-3 py-1.5 font-medium text-sm transition-colors",
                 tool === entry.id
-                  ? "bg-white text-foreground shadow-sm"
+                  ? "bg-white text-foreground ring-1 ring-black/5"
                   : "text-muted-foreground hover:text-foreground"
               )}
               key={entry.id}
@@ -81,7 +81,7 @@ export function BrushControls({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="brush-size">Brush size</Label>
-            <span className="font-medium text-muted-foreground text-xs">
+            <span className="font-mono text-muted-foreground text-xs">
               {formatPercent(radius, MIN_BRUSH_RADIUS, MAX_BRUSH_RADIUS)}
             </span>
           </div>
@@ -99,7 +99,7 @@ export function BrushControls({
             />
             <div
               aria-hidden="true"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-white shadow-sm"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-black/5"
             >
               <div
                 className="rounded-full bg-neutral-900"
@@ -112,7 +112,7 @@ export function BrushControls({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="brush-flow">Flow</Label>
-            <span className="font-medium text-muted-foreground text-xs">
+            <span className="font-mono text-muted-foreground text-xs">
               {formatPercent(flow, MIN_FLOW, MAX_FLOW)}
             </span>
           </div>
@@ -128,7 +128,7 @@ export function BrushControls({
               type="range"
               value={flow}
             />
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-white shadow-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
               <div
                 className="h-6 w-6 rounded-full border border-neutral-300"
                 style={{
