@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { needsDefinedEdge } from "../lib/color/swatch-edge";
 import { cn } from "../lib/utils";
 
 export interface PigmentSwatchProps {
@@ -32,6 +33,8 @@ export function PigmentSwatch({
   overlay,
   onClick,
 }: PigmentSwatchProps) {
+  const hasEdge = needsDefinedEdge(hex);
+
   return (
     <button
       aria-label={detail ? `${label}, ${detail}` : label}
@@ -40,22 +43,23 @@ export function PigmentSwatch({
       onClick={onClick}
       type="button"
     >
-      {/* Both rings have to live in one box-shadow: a Tailwind ring-* utility is
+      {/* Every ring has to live in one box-shadow: a Tailwind ring-* utility is
           itself a box-shadow, so an inline one would silently replace it. */}
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 rounded-full bg-card transition-transform duration-150 group-active:scale-95"
         style={{
           boxShadow: [
+            // Listed first so it paints over the outer edge of the pigment ring
+            // below, and only for pigments that cannot hold an edge themselves.
+            hasEdge ? "inset 0 0 0 1px rgba(15, 10, 6, 0.22)" : null,
             // The pigment's own ring, revealed when the fill shrinks.
             hex ? `inset 0 0 0 3px ${hex}` : null,
             // The shrinking fill alone cannot carry selection: on titanium white
             // a white ring around a white dot looks identical to an unselected
             // white disc. This dark ring is the one cue that holds for every
-            // pigment, and off-state it still gives pale dabs an edge.
-            isActive
-              ? "0 0 0 2px hsl(var(--foreground))"
-              : "0 0 0 1px rgba(15, 10, 6, 0.12)",
+            // pigment.
+            isActive ? "0 0 0 2px hsl(var(--foreground))" : null,
           ]
             .filter(Boolean)
             .join(", "),
@@ -63,7 +67,9 @@ export function PigmentSwatch({
       >
         <span
           className={cn(
-            "absolute inset-0 rounded-full ring-1 ring-inset ring-black/5",
+            "absolute inset-0 rounded-full",
+            // Defines the shrunken dot against the white gap, same test.
+            hasEdge && "ring-1 ring-inset ring-black/20",
             // Asymmetric on purpose: shrinking into the selected state is
             // quick and decisive, growing back out is softer.
             isActive

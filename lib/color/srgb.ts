@@ -71,6 +71,18 @@ const CONTRAST_WHITE_NUMERATOR = 1.05;
 export const INK_CROSSOVER_LUMINANCE =
   Math.sqrt(CONTRAST_WHITE_NUMERATOR * CONTRAST_OFFSET) - CONTRAST_OFFSET;
 
+/**
+ * WCAG contrast ratio between two colours, 1 (identical) to 21 (black/white).
+ * Order-independent.
+ */
+export const contrastRatio = (a: Rgb, b: Rgb): number => {
+  const first = relativeLuminance(a);
+  const second = relativeLuminance(b);
+  const lighter = Math.max(first, second);
+  const darker = Math.min(first, second);
+  return (lighter + CONTRAST_OFFSET) / (darker + CONTRAST_OFFSET);
+};
+
 const HEX_PATTERN = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
 export const BYTE_MAX = 255;
 const SHORT_HEX_LENGTH = 3;
