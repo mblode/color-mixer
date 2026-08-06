@@ -37,7 +37,8 @@ export default {
         ring: "hsl(var(--ring))",
       },
       fontFamily: {
-        sans: ["Manrope", "Space Grotesk", "ui-sans-serif", "system-ui"],
+        sans: ["var(--font-glide)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-glide-mono)", "ui-monospace", "monospace"],
       },
       boxShadow: {
         soft: "0 18px 50px -36px rgba(15, 10, 6, 0.4)",

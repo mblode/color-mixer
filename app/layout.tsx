@@ -1,15 +1,29 @@
 import type { Metadata, Viewport } from "next";
-import { Manrope } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
 import { CraftedBy } from "../components/crafted-by";
 
 import "./globals.css";
 
-const manrope = Manrope({
+// Roman only. Nothing here renders in italic, and next/font applies one
+// preload setting per declaration, so shipping the italic face alongside it
+// would fetch 209KB on first load for nothing.
+const glide = localFont({
+  src: "./fonts/glide-variable.woff2",
+  variable: "--font-glide",
+  weight: "100 950",
   display: "swap",
-  subsets: ["latin"],
-  variable: "--font-manrope",
+});
+
+const glideMono = localFont({
+  src: "./fonts/glide-mono.woff2",
+  variable: "--font-glide-mono",
+  weight: "400",
+  display: "swap",
+  // Nothing on this page renders in mono; preloading it would only compete
+  // with the LCP text for bandwidth.
+  preload: false,
 });
 
 const siteUrl = "https://blode.co/color-mixer";
@@ -78,11 +92,11 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html lang="en-GB">
+    <html className={`${glide.variable} ${glideMono.variable}`} lang="en-GB">
       <head>
         <link href={process.env.NEXT_PUBLIC_POSTHOG_HOST} rel="preconnect" />
       </head>
-      <body className={manrope.variable}>
+      <body>
         {children}
         <footer className="flex justify-center px-6 py-8">
           <CraftedBy />

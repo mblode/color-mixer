@@ -31,8 +31,7 @@
 
   body {
     @apply min-h-screen bg-background text-foreground antialiased;
-    font-family:
-      "Manrope", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-glide), ui-sans-serif, system-ui, sans-serif;
     background-image: radial-gradient(
       120% 120% at 10% 10%,
       rgba(255, 255, 255, 0.9) 0%,
