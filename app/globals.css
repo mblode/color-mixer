@@ -13,8 +13,10 @@
     --primary-foreground: 0 0% 100%;
     --secondary: 30 24% 92%;
     --secondary-foreground: 24 20% 18%;
-    --muted: 30 18% 93%;
-    --muted-foreground: 24 10% 42%;
+    --muted: 30 18% 88%;
+    /* 42% only just cleared 4.5:1 on the warm background; secondary text in
+       the dock sits at 12px, so it needs the headroom. */
+    --muted-foreground: 24 12% 34%;
     --accent: 28 28% 90%;
     --accent-foreground: 24 20% 16%;
     --destructive: 0 72% 50%;
@@ -59,39 +61,100 @@
   height: 190px;
 }
 
+/*
+ * A fat pill track carrying the current pigment, with the thumb filled in that
+ * pigment too. Still a native <input type="range">, so keyboard control and
+ * the value semantics come for free; only the paint is ours.
+ *
+ * --range-fill, --range-thumb and --range-dot are set per instance. The thumb
+ * itself is a fixed size so the grab target never moves; only --range-dot, the
+ * radius of the coloured disc painted inside it, tracks the value. That is what
+ * lets the size slider's thumb double as the brush preview.
+ */
 .range {
+  --range-thumb-size: 22px;
+  --range-dot: 8px;
+  --range-fill: hsl(var(--muted));
+  --range-thumb: hsl(var(--foreground));
   -webkit-appearance: none;
   appearance: none;
-  width: 100%;
-  height: 10px;
+  height: 28px;
   border-radius: 999px;
-  background: hsl(var(--border));
+  background: var(--range-fill);
+  /* Reads as a well sunk into the dock, which is what separates the track from
+     a surface only a few percent lighter than it. */
+  box-shadow: inset 0 0 0 1px rgba(15, 10, 6, 0.08);
   outline: none;
   cursor: pointer;
+}
+
+.range:focus-visible {
+  box-shadow:
+    0 0 0 2px hsl(var(--card)),
+    0 0 0 4px hsl(var(--ring));
 }
 
 .range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: var(--range-thumb-size);
+  height: var(--range-thumb-size);
+  border: none;
   border-radius: 999px;
-  background: hsl(var(--foreground));
-  border: 2px solid #ffffff;
-  box-shadow: 0 1px 3px rgba(15, 10, 6, 0.2);
+  /* The 1px dark step keeps the dot visible when the pigment is titanium
+     white, which would otherwise be white-on-white. */
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--range-thumb) 0 calc(var(--range-dot) - 0.5px),
+    rgba(15, 10, 6, 0.2) var(--range-dot) calc(var(--range-dot) + 1px),
+    hsl(var(--card)) calc(var(--range-dot) + 1px) 100%
+  );
+  /* Outer hairline so a white pigment still reads against the track. */
+  box-shadow:
+    0 0 0 1px rgba(15, 10, 6, 0.15),
+    0 1px 2px rgba(15, 10, 6, 0.2);
 }
 
 .range::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: var(--range-thumb-size);
+  height: var(--range-thumb-size);
+  border: none;
   border-radius: 999px;
-  background: hsl(var(--foreground));
-  border: 2px solid #ffffff;
-  box-shadow: 0 1px 3px rgba(15, 10, 6, 0.2);
+  /* The 1px dark step keeps the dot visible when the pigment is titanium
+     white, which would otherwise be white-on-white. */
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--range-thumb) 0 calc(var(--range-dot) - 0.5px),
+    rgba(15, 10, 6, 0.2) var(--range-dot) calc(var(--range-dot) + 1px),
+    hsl(var(--card)) calc(var(--range-dot) + 1px) 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(15, 10, 6, 0.15),
+    0 1px 2px rgba(15, 10, 6, 0.2);
 }
 
 .range::-moz-range-track {
-  height: 10px;
+  height: 28px;
   border-radius: 999px;
-  background: hsl(var(--border));
+  background: var(--range-fill);
+}
+
+/*
+ * The dock is translucent chrome over the canvas. Raise the opacity and drop
+ * the blur when the reader has asked for less transparency, and go near-solid
+ * with a defined edge under increased contrast.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .dock {
+    background: hsl(var(--card));
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .dock {
+    background: hsl(var(--card));
+    backdrop-filter: none;
+    border: 1px solid hsl(var(--foreground));
+  }
 }

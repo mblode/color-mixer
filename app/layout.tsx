@@ -2,8 +2,6 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
-import { CraftedBy } from "../components/crafted-by";
-
 import "./globals.css";
 
 // Roman only. Nothing here renders in italic, and next/font applies one
@@ -96,12 +94,9 @@ export default function RootLayout({
       <head>
         <link href={process.env.NEXT_PUBLIC_POSTHOG_HOST} rel="preconnect" />
       </head>
-      <body>
-        {children}
-        <footer className="flex justify-center px-6 py-8">
-          <CraftedBy />
-        </footer>
-      </body>
+      {/* The canvas owns the viewport, so the credit moved into the app's
+          "How the mixing works" panel rather than a footer below the fold. */}
+      <body>{children}</body>
     </html>
   );
 }
