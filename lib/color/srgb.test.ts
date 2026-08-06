@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   bytesToRgb,
+  contrastRatio,
   hexToRgb,
   INK_CROSSOVER_LUMINANCE,
   relativeLuminance,
@@ -117,5 +118,26 @@ describe("relativeLuminance", () => {
     const againstWhite = 1.05 / (l + 0.05);
     const againstBlack = (l + 0.05) / 0.05;
     expect(againstWhite).toBeCloseTo(againstBlack, 2);
+  });
+});
+
+describe("contrastRatio", () => {
+  it("spans 1 to 21", () => {
+    expect(contrastRatio([0, 0, 0], [0, 0, 0])).toBeCloseTo(1, 6);
+    expect(contrastRatio([0, 0, 0], [1, 1, 1])).toBeCloseTo(21, 6);
+  });
+
+  it("is order-independent", () => {
+    const a = hexToRgb("#FF2702");
+    const b = hexToRgb("#FFFFFF");
+    expect(contrastRatio(a, b)).toBeCloseTo(contrastRatio(b, a), 6);
+  });
+
+  it("rates a saturated yellow against white far lower than its hue suggests", () => {
+    const white = hexToRgb("#FFFFFF");
+    // Cadmium yellow reads as a strong colour but carries almost no luminance
+    // contrast; sap green is nearly three times better despite looking softer.
+    expect(contrastRatio(hexToRgb("#FEEC00"), white)).toBeCloseTo(1.22, 2);
+    expect(contrastRatio(hexToRgb("#6B9404"), white)).toBeCloseTo(3.58, 2);
   });
 });
