@@ -24,6 +24,34 @@ const makeRng = (seed: number): (() => number) => {
   };
 };
 
+/**
+ * Pressure a mouse reports while a button is held. A pen reports its own, but a
+ * mouse is pinned here and so never reaches the brush's nominal size.
+ */
+export const MOUSE_PRESSURE = 0.5;
+
+/**
+ * Radius of the dab a pointer at rest would lay down, in whatever units
+ * `minDimension` is given in.
+ *
+ * The brush cursor draws this rather than the nominal size, so the ring matches
+ * the paint. With OIL_BRUSH's pressure curve a mouse only ever gets ~0.68 of
+ * nominal, which made a nominal-sized ring look half again too big. Speed is
+ * taken as zero: the ring is what you get drawing slowly, and a fast stroke
+ * tapering inside it is the expected behaviour rather than a mismatch.
+ */
+export const dabRadiusAtRest = (
+  settings: BrushSettings,
+  minDimension: number,
+  pressure: number = MOUSE_PRESSURE
+): number => {
+  const baseRadius = (settings.size * minDimension) / 2;
+  const sizeMul =
+    evalCurve(settings.pressureToSize, pressure) *
+    evalCurve(settings.speedToSize, 0);
+  return Math.max(MIN_DAB_RADIUS, baseRadius * sizeMul);
+};
+
 export interface StrokeConfig {
   settings: BrushSettings;
   /** Smaller canvas dimension in pixels — converts size fractions to pixels. */
