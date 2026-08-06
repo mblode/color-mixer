@@ -3,13 +3,15 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 
 export interface PigmentSwatchProps {
-  /** Rendered inside the dab. Defaults to a solid fill of `hex`. */
+  /** Rendered inside the dab, so it scales with the fill. */
   children?: ReactNode;
   hex?: string;
   isActive: boolean;
   label: string;
   /** Second tooltip line: Colour Index code and tinting strength. */
   detail?: string;
+  /** Rendered over the dab at a fixed size, outside the scaling fill. */
+  overlay?: ReactNode;
   onClick: () => void;
 }
 
@@ -27,6 +29,7 @@ export function PigmentSwatch({
   hex,
   isActive,
   label,
+  overlay,
   onClick,
 }: PigmentSwatchProps) {
   return (
@@ -72,6 +75,13 @@ export function PigmentSwatch({
         >
           {children}
         </span>
+
+        {/* Outside the scaling fill so it keeps its size when selected. */}
+        {overlay ? (
+          <span className="absolute inset-0 flex items-center justify-center">
+            {overlay}
+          </span>
+        ) : null}
       </span>
 
       {/* CSS-only tooltip: the dock is a known container and this only ever
