@@ -4,25 +4,25 @@ import { needsDefinedEdge } from "../lib/color/swatch-edge";
 import { cn } from "../lib/utils";
 
 export interface PigmentSwatchProps {
-  /** Rendered inside the dab, so it scales with the fill. */
+  /** Rendered over the fill, filling the dab. */
   children?: ReactNode;
   hex?: string;
   isActive: boolean;
   label: string;
   /** Second tooltip line: Colour Index code and tinting strength. */
   detail?: string;
-  /** Rendered over the dab at a fixed size, outside the scaling fill. */
-  overlay?: ReactNode;
   onClick: () => void;
 }
 
 /**
  * A paint dab.
  *
- * Unselected it reads as one solid disc. Selected, the fill shrinks inside a
- * ring of its own colour, so the selected state is a ring-plus-dot rather than
- * an added outline. The ring is the pigment itself, which is what keeps
- * titanium white legible against a white dock.
+ * The dab stays a whole disc in both states and selection is one ring, held off
+ * the edge by a gap. Earlier versions also shrank the fill to reveal a ring of
+ * the pigment's own colour, which stacked three cues and read as a dartboard:
+ * black, yellow, white, yellow. The gap is what makes a single ring work for
+ * every pigment, since a dark ring sits directly on phthalo blue unseen and
+ * titanium white has no edge of its own to show.
  */
 export function PigmentSwatch({
   children,
@@ -30,64 +30,33 @@ export function PigmentSwatch({
   hex,
   isActive,
   label,
-  overlay,
   onClick,
 }: PigmentSwatchProps) {
-  const hasEdge = needsDefinedEdge(hex);
-
   return (
     <button
       aria-label={detail ? `${label}, ${detail}` : label}
       aria-pressed={isActive}
-      className="group relative size-10 shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      className={cn(
+        "group relative size-10 shrink-0 rounded-full transition-shadow duration-150 motion-reduce:transition-none",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        // The offset band takes the dock's colour, so the ring reads as floating
+        // clear of the dab rather than outlining it.
+        isActive &&
+          "ring-2 ring-foreground ring-offset-2 ring-offset-background"
+      )}
       onClick={onClick}
       type="button"
     >
-      {/* Every ring has to live in one box-shadow: a Tailwind ring-* utility is
-          itself a box-shadow, so an inline one would silently replace it. */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 rounded-full bg-card transition-transform duration-150 group-active:scale-95"
-        style={{
-          boxShadow: [
-            // Listed first so it paints over the outer edge of the pigment ring
-            // below, and only for pigments that cannot hold an edge themselves.
-            hasEdge ? "inset 0 0 0 1px rgba(15, 10, 6, 0.22)" : null,
-            // The pigment's own ring, revealed when the fill shrinks.
-            hex ? `inset 0 0 0 3px ${hex}` : null,
-            // The shrinking fill alone cannot carry selection: on titanium white
-            // a white ring around a white dot looks identical to an unselected
-            // white disc. This dark ring is the one cue that holds for every
-            // pigment.
-            isActive ? "0 0 0 2px hsl(var(--foreground))" : null,
-          ]
-            .filter(Boolean)
-            .join(", "),
-        }}
+        className={cn(
+          "pointer-events-none absolute inset-0 overflow-hidden rounded-full bg-card transition-transform duration-150 group-active:scale-95 motion-reduce:transition-none",
+          // Only pigments too pale to hold their own edge get a hairline.
+          needsDefinedEdge(hex) && "ring-1 ring-inset ring-black/20"
+        )}
+        style={hex ? { backgroundColor: hex } : undefined}
       >
-        <span
-          className={cn(
-            "absolute inset-0 rounded-full",
-            // Defines the shrunken dot against the white gap, same test.
-            hasEdge && "ring-1 ring-inset ring-black/20",
-            // Asymmetric on purpose: shrinking into the selected state is
-            // quick and decisive, growing back out is softer.
-            isActive
-              ? "scale-[0.68] duration-200 ease-[cubic-bezier(0.2,0,0,1)]"
-              : "scale-100 duration-300 ease-[cubic-bezier(0.6,0,0.35,1)]",
-            "transition-transform motion-reduce:transition-none"
-          )}
-          style={hex ? { backgroundColor: hex } : undefined}
-        >
-          {children}
-        </span>
-
-        {/* Outside the scaling fill so it keeps its size when selected. */}
-        {overlay ? (
-          <span className="absolute inset-0 flex items-center justify-center">
-            {overlay}
-          </span>
-        ) : null}
+        {children}
       </span>
 
       {/* CSS-only tooltip: the dock is a known container and this only ever
