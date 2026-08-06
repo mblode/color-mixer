@@ -1,6 +1,7 @@
 import type { ChangeEvent, CSSProperties } from "react";
 
 import type { Tool } from "../brush/types";
+import { needsDefinedEdge } from "../lib/color/swatch-edge";
 import { cn } from "../lib/utils";
 
 export interface BrushControlsProps {
@@ -117,6 +118,11 @@ function Slider({
           {
             "--range-fill": fill,
             "--range-thumb": thumbColor,
+            // The dot sits on the white thumb, which is the same surface the
+            // swatch rule measures against, so the test is shared.
+            ...(needsDefinedEdge(thumbColor)
+              ? { "--range-dot-ring": "rgba(15, 10, 6, 0.2)" }
+              : {}),
             ...(dot === undefined ? {} : { "--range-dot": `${dot}px` }),
           } as CSSProperties
         }
