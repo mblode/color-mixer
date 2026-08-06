@@ -2,11 +2,7 @@ import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FluidSimulation } from "../simulation/fluid";
-import type {
-  BrushInput,
-  SimulationHistory,
-  SimulationStatus,
-} from "../simulation/types";
+import type { BrushInput, SimulationStatus } from "../simulation/types";
 
 export interface SimulationHandle {
   clear: () => void;
@@ -20,14 +16,12 @@ export interface SimulationCanvasProps {
   handleRef?: RefObject<SimulationHandle | null>;
   /** Surfaced in the dock rather than under the canvas. */
   onErrorChange?: (message: string | null) => void;
-  onHistoryChange?: (history: SimulationHistory) => void;
 }
 
 export function SimulationCanvas({
   brushInput,
   handleRef,
   onErrorChange,
-  onHistoryChange,
 }: SimulationCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
@@ -40,13 +34,6 @@ export function SimulationCanvas({
   const [statusDetail, setStatusDetail] = useState<string>(
     "Waiting for initialization..."
   );
-
-  // The simulation is constructed once, so its callbacks read the latest
-  // handler through a ref rather than pinning the first one forever.
-  const historyCallbackRef = useRef(onHistoryChange);
-  useEffect(() => {
-    historyCallbackRef.current = onHistoryChange;
-  }, [onHistoryChange]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,7 +48,6 @@ export function SimulationCanvas({
           setStatusDetail(detail);
         }
       },
-      onHistoryChange: (history) => historyCallbackRef.current?.(history),
     });
     simulationRef.current = simulation;
     simulation.attachResizeObserver();

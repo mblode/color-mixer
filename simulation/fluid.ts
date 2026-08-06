@@ -30,21 +30,33 @@ const STAMP_DEPOSIT = 0.32;
 // Coverage (raw deposit) at which paint is fully opaque over the substrate.
 const COVERAGE_FULL = 1;
 
-// Undo snapshots are full copies of both latent textures, so at rgba32float a
-// step costs 32 bytes per device pixel. That is small on a laptop window and
-// very large on a retina 4K one, which is why depth comes from a byte budget
-// rather than a fixed count:
+// Undo snapshots are half precision. The live buffers have to be 32-bit because
+// they accumulate (see LATENT_FORMAT above), but a snapshot is stored once and
+// read once, so the only error is a single rounding of ~0.1% relative — far
+// below anything the render can show. That halves the cost of a step to 16 bytes
+// per device pixel and doubles how many fit in the budget.
+const HISTORY_FORMAT: GPUTextureFormat = "rgba16float";
+const HISTORY_BYTES_PER_PIXEL = 8;
+
+// Largest magnitude rgba16float can hold is 65504. Coverage and mix weight are
+// unbounded sums, so a pathological amount of painting over one pixel could
+// exceed it and store Infinity, which the render would decode as white. The
+// downcast clamps below that, which is lossy only in a regime that has been
+// visually saturated for thousands of strokes.
+const HISTORY_MAX_MAGNITUDE = 60000;
+
+// Depth comes from a byte budget rather than a fixed count, because a step
+// scales with device pixels:
 //
-//   1280x800 @1x   ~26MB/step  -> 24 steps (hits MAX_HISTORY)
-//   1920x1080 @1x  ~63MB/step  -> 12 steps
-//   1920x1083 @2x  ~254MB/step -> 3 steps
+//   1280x800 @1x   ~16MB/step -> 24 steps (hits MAX_HISTORY)
+//   1920x1083 @1x  ~33MB/step -> 23 steps
+//   3840x2166 @2x ~133MB/step -> 5 steps
 //
 // MIN_HISTORY is a floor that will overrun the budget on an absurdly large
 // canvas: being able to take back the last stroke matters more than the cap.
 const HISTORY_BYTE_BUDGET = 768 * 1024 * 1024;
 const MIN_HISTORY = 1;
 const MAX_HISTORY = 24;
-const LATENT_BYTES_PER_PIXEL = 16;
 
 interface HistoryEntry {
   latent0: GPUTexture;
@@ -62,7 +74,6 @@ interface PingPongTexture {
 interface SimulationCallbacks {
   onStatusChange?: (status: SimulationStatus, detail?: string) => void;
   onMetrics?: (metrics: SimulationMetrics) => void;
-  onHistoryChange?: (history: SimulationHistory) => void;
 }
 
 const createTexture = (
@@ -108,10 +119,16 @@ export class FluidSimulation {
   private latent0Textures: PingPongTexture | null = null;
   private latent1Textures: PingPongTexture | null = null;
   private computeLayout: GPUBindGroupLayout | null = null;
+  // Two layouts because a bind group layout pins its storage texture's format,
+  // and these differ only in which direction the conversion runs.
+  private historyDownLayout: GPUBindGroupLayout | null = null;
+  private historyUpLayout: GPUBindGroupLayout | null = null;
   private readonly pipelines: {
     stamp?: GPUComputePipeline;
     smudge?: GPUComputePipeline;
     clear?: GPUComputePipeline;
+    historyDown?: GPUComputePipeline;
+    historyUp?: GPUComputePipeline;
     render?: GPURenderPipeline;
   } = {};
   private size = { width: 0, height: 0 };
@@ -243,7 +260,6 @@ export class FluidSimulation {
     while (this.undoStack.length > this.historyDepthLimit()) {
       this.destroyEntry(this.undoStack.shift());
     }
-    this.emitHistory();
   }
 
   private stepHistory(from: HistoryEntry[], to: HistoryEntry[]): boolean {
@@ -260,13 +276,12 @@ export class FluidSimulation {
     this.destroyEntry(target);
     this.stroke = null;
     this.pendingDabs = [];
-    this.emitHistory();
     return true;
   }
 
   private historyDepthLimit(): number {
     const perEntry =
-      this.size.width * this.size.height * LATENT_BYTES_PER_PIXEL * 2;
+      this.size.width * this.size.height * HISTORY_BYTES_PER_PIXEL * 2;
     if (perEntry === 0) {
       return 0;
     }
@@ -288,15 +303,17 @@ export class FluidSimulation {
       return null;
     }
 
-    // Snapshots are only ever copy endpoints; they are never bound to a shader.
-    const usage = GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
+    // Written by the downcast pass, read by the upcast pass. Never copied, so
+    // no COPY_* usage is needed.
+    const usage =
+      GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
     let latent0: GPUTexture;
     let latent1: GPUTexture;
     try {
       latent0 = createTexture(
         this.device,
         "history-latent0",
-        LATENT_FORMAT,
+        HISTORY_FORMAT,
         usage,
         this.size.width,
         this.size.height
@@ -304,7 +321,7 @@ export class FluidSimulation {
       latent1 = createTexture(
         this.device,
         "history-latent1",
-        LATENT_FORMAT,
+        HISTORY_FORMAT,
         usage,
         this.size.width,
         this.size.height
@@ -321,53 +338,72 @@ export class FluidSimulation {
       return null;
     }
 
-    const encoder = this.device.createCommandEncoder({
-      label: "history-capture",
-    });
-    const extent = { width: this.size.width, height: this.size.height };
-    encoder.copyTextureToTexture(
-      { texture: this.latent0Textures.front },
-      { texture: latent0 },
-      extent
-    );
-    encoder.copyTextureToTexture(
-      { texture: this.latent1Textures.front },
-      { texture: latent1 },
-      extent
-    );
-    this.queue.submit([encoder.finish()]);
+    if (
+      !this.runHistoryPass(
+        "history-capture",
+        this.pipelines.historyDown,
+        this.historyDownLayout,
+        [this.latent0Textures.front, this.latent1Textures.front],
+        [latent0, latent1]
+      )
+    ) {
+      latent0.destroy();
+      latent1.destroy();
+      return null;
+    }
 
     return { latent0, latent1 };
   }
 
   private restore(entry: HistoryEntry) {
-    if (
-      !(
-        this.device &&
-        this.queue &&
-        this.latent0Textures &&
-        this.latent1Textures
-      )
-    ) {
+    if (!(this.latent0Textures && this.latent1Textures)) {
       return;
     }
-    const encoder = this.device.createCommandEncoder({
-      label: "history-restore",
-    });
-    const extent = { width: this.size.width, height: this.size.height };
-    // Copying into the existing front textures rather than swapping keeps the
+    // Writing into the existing front textures rather than swapping keeps the
     // cached render and compute bind groups valid.
-    encoder.copyTextureToTexture(
-      { texture: entry.latent0 },
-      { texture: this.latent0Textures.front },
-      extent
+    this.runHistoryPass(
+      "history-restore",
+      this.pipelines.historyUp,
+      this.historyUpLayout,
+      [entry.latent0, entry.latent1],
+      [this.latent0Textures.front, this.latent1Textures.front]
     );
-    encoder.copyTextureToTexture(
-      { texture: entry.latent1 },
-      { texture: this.latent1Textures.front },
-      extent
+  }
+
+  /**
+   * One compute pass that copies two textures, converting precision on the way.
+   * A plain copyTextureToTexture cannot do it, because formats have to match.
+   */
+  private runHistoryPass(
+    label: string,
+    pipeline: GPUComputePipeline | undefined,
+    layout: GPUBindGroupLayout | null,
+    sources: [GPUTexture, GPUTexture],
+    destinations: [GPUTexture, GPUTexture]
+  ): boolean {
+    if (!(this.device && this.queue && pipeline && layout)) {
+      return false;
+    }
+    const bindGroup = this.device.createBindGroup({
+      layout,
+      entries: [
+        { binding: 0, resource: sources[0].createView() },
+        { binding: 1, resource: sources[1].createView() },
+        { binding: 2, resource: destinations[0].createView() },
+        { binding: 3, resource: destinations[1].createView() },
+      ],
+    });
+    const encoder = this.device.createCommandEncoder({ label });
+    const pass = encoder.beginComputePass({ label: `${label}-pass` });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(
+      Math.ceil(this.size.width / WORKGROUP_SIZE),
+      Math.ceil(this.size.height / WORKGROUP_SIZE)
     );
+    pass.end();
     this.queue.submit([encoder.finish()]);
+    return true;
   }
 
   private destroyEntry(entry: HistoryEntry | undefined) {
@@ -380,10 +416,6 @@ export class FluidSimulation {
       this.destroyEntry(entry);
     }
     stack.length = 0;
-  }
-
-  private emitHistory() {
-    this.callbacks.onHistoryChange?.(this.history);
   }
 
   updateBrushInput(input: BrushInput) {
@@ -501,7 +533,6 @@ export class FluidSimulation {
     // rather than restoring a mismatched copy later.
     this.discardEntries(this.undoStack);
     this.discardEntries(this.redoStack);
-    this.emitHistory();
 
     const usage =
       GPUTextureUsage.TEXTURE_BINDING |
@@ -673,6 +704,20 @@ export class FluidSimulation {
       "clear",
       this.getClearShader()
     );
+
+    this.historyDownLayout = this.createHistoryLayout(HISTORY_FORMAT);
+    this.historyUpLayout = this.createHistoryLayout(LATENT_FORMAT);
+    this.pipelines.historyDown = this.createHistoryPipeline(
+      "history-down",
+      HISTORY_FORMAT,
+      this.historyDownLayout
+    );
+    this.pipelines.historyUp = this.createHistoryPipeline(
+      "history-up",
+      LATENT_FORMAT,
+      this.historyUpLayout
+    );
+
     this.pipelines.render = this.createRenderPipeline();
 
     this.clearTextures();
@@ -690,6 +735,58 @@ export class FluidSimulation {
       compute: {
         module: this.device.createShaderModule({
           code,
+          label: `${label}-shader`,
+        }),
+        entryPoint: "main",
+      },
+    });
+  }
+
+  private createHistoryLayout(destinationFormat: GPUTextureFormat) {
+    if (!this.device) {
+      return null;
+    }
+    return this.device.createBindGroupLayout({
+      label: `history-${destinationFormat}`,
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: "unfilterable-float" },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.COMPUTE,
+          texture: { sampleType: "unfilterable-float" },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.COMPUTE,
+          storageTexture: { access: "write-only", format: destinationFormat },
+        },
+        {
+          binding: 3,
+          visibility: GPUShaderStage.COMPUTE,
+          storageTexture: { access: "write-only", format: destinationFormat },
+        },
+      ],
+    });
+  }
+
+  private createHistoryPipeline(
+    label: string,
+    destinationFormat: GPUTextureFormat,
+    layout: GPUBindGroupLayout | null
+  ) {
+    if (!(this.device && layout)) {
+      return;
+    }
+    return this.device.createComputePipeline({
+      label,
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+      compute: {
+        module: this.device.createShaderModule({
+          code: this.getHistoryShader(destinationFormat),
           label: `${label}-shader`,
         }),
         entryPoint: "main",
@@ -1043,6 +1140,30 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   if (!inBounds(gid.xy, dims)) { return; }
   textureStore(latent0Dst, vec2<i32>(gid.xy), vec4<f32>(0.0));
   textureStore(latent1Dst, vec2<i32>(gid.xy), vec4<f32>(0.0));
+}`;
+  }
+
+  /**
+   * Straight texel copy of both latent textures, used in both directions: down
+   * to rgba16float on capture, back up to rgba32float on restore. The clamp only
+   * bites on the way down, where the destination has a smaller range.
+   */
+  private getHistoryShader(destinationFormat: GPUTextureFormat) {
+    return /* wgsl */ `
+@group(0) @binding(0) var src0 : texture_2d<f32>;
+@group(0) @binding(1) var src1 : texture_2d<f32>;
+@group(0) @binding(2) var dst0 : texture_storage_2d<${destinationFormat}, write>;
+@group(0) @binding(3) var dst1 : texture_storage_2d<${destinationFormat}, write>;
+
+const LIMIT : vec4<f32> = vec4<f32>(${HISTORY_MAX_MAGNITUDE}.0);
+
+@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let dims = textureDimensions(dst0);
+  if (gid.x >= dims.x || gid.y >= dims.y) { return; }
+  let texel = vec2<i32>(gid.xy);
+  textureStore(dst0, texel, clamp(textureLoad(src0, texel, 0), -LIMIT, LIMIT));
+  textureStore(dst1, texel, clamp(textureLoad(src1, texel, 0), -LIMIT, LIMIT));
 }`;
   }
 
