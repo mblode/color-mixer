@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   bytesToRgb,
   hexToRgb,
+  INK_CROSSOVER_LUMINANCE,
+  relativeLuminance,
   linearChannelToSrgb,
   linearToSrgb,
   type Rgb,
@@ -85,5 +87,35 @@ describe("sRGB transfer function", () => {
   it("makes a perceptual 50% considerably darker in linear light", () => {
     // sRGB 0.5 is ~0.214 of full light — the reason blending must be linear.
     expect(srgbChannelToLinear(0.5)).toBeCloseTo(0.214, 3);
+  });
+});
+
+describe("relativeLuminance", () => {
+  it("spans 0 to 1 between black and white", () => {
+    expect(relativeLuminance([0, 0, 0])).toBeCloseTo(0, 6);
+    expect(relativeLuminance([1, 1, 1])).toBeCloseTo(1, 6);
+  });
+
+  it("weights green far above blue", () => {
+    const green = relativeLuminance(hexToRgb("#00FF00"));
+    const blue = relativeLuminance(hexToRgb("#0000FF"));
+    expect(green).toBeGreaterThan(blue * 9);
+  });
+
+  it("puts the palette's pale and dark pigments on opposite sides of the ink crossover", () => {
+    // Titanium white needs dark ink, phthalo blue needs white ink.
+    expect(relativeLuminance(hexToRgb("#FDFDFD"))).toBeGreaterThan(
+      INK_CROSSOVER_LUMINANCE
+    );
+    expect(relativeLuminance(hexToRgb("#1B3A6B"))).toBeLessThan(
+      INK_CROSSOVER_LUMINANCE
+    );
+  });
+
+  it("crosses over where contrast against black and white is equal", () => {
+    const l = INK_CROSSOVER_LUMINANCE;
+    const againstWhite = 1.05 / (l + 0.05);
+    const againstBlack = (l + 0.05) / 0.05;
+    expect(againstWhite).toBeCloseTo(againstBlack, 2);
   });
 });

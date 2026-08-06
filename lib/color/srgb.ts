@@ -46,6 +46,31 @@ export const linearToSrgb = (rgb: Rgb): Rgb => [
   linearChannelToSrgb(rgb[2]),
 ];
 
+const LUMINANCE_R = 0.2126;
+const LUMINANCE_G = 0.7152;
+const LUMINANCE_B = 0.0722;
+
+/**
+ * WCAG relative luminance (0–1) of a gamma-encoded sRGB colour. Weighted in
+ * linear light, which is why it needs the transfer function above rather than
+ * a plain average of the channels.
+ */
+export const relativeLuminance = (rgb: Rgb): number => {
+  const [r, g, b] = srgbToLinear(rgb);
+  return LUMINANCE_R * r + LUMINANCE_G * g + LUMINANCE_B * b;
+};
+
+const CONTRAST_OFFSET = 0.05;
+const CONTRAST_WHITE_NUMERATOR = 1.05;
+
+/**
+ * The luminance at which a colour contrasts equally against black and white, so
+ * above it dark ink wins and below it white does. Derived rather than rounded:
+ * 1.05 / (L + 0.05) = (L + 0.05) / 0.05 gives L = sqrt(0.0525) - 0.05.
+ */
+export const INK_CROSSOVER_LUMINANCE =
+  Math.sqrt(CONTRAST_WHITE_NUMERATOR * CONTRAST_OFFSET) - CONTRAST_OFFSET;
+
 const HEX_PATTERN = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
 export const BYTE_MAX = 255;
 const SHORT_HEX_LENGTH = 3;

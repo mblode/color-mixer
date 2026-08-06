@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { HexColorInput, HexColorPicker } from "react-colorful";
 
+import {
+  hexToRgb,
+  INK_CROSSOVER_LUMINANCE,
+  relativeLuminance,
+} from "../lib/color/srgb";
 import type { PigmentPreset } from "../lib/pigments";
 import { PigmentSwatch } from "./pigment-swatch";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
@@ -22,6 +27,20 @@ const pigmentDetail = (item: PigmentPreset) =>
   [item.colorIndex, `strength ${item.tintingStrength}`]
     .filter(Boolean)
     .join(" · ");
+
+/**
+ * Ink that stays legible on an arbitrary chosen colour. The hex arrives from a
+ * text field, so a half-typed value has to fall back rather than throw.
+ */
+const inkOn = (hex: string) => {
+  try {
+    return relativeLuminance(hexToRgb(hex)) > INK_CROSSOVER_LUMINANCE
+      ? "hsl(var(--foreground))"
+      : "#FFFFFF";
+  } catch {
+    return "hsl(var(--foreground))";
+  }
+};
 
 export function PigmentControls({
   palette,
@@ -61,9 +80,18 @@ export function PigmentControls({
                 hex={isCustomActive ? customPigment.hex : undefined}
                 isActive={isCustomActive}
                 label={
-                  isCustomActive ? "Custom pigment" : "Pick a custom colour"
+                  isCustomActive ? "Edit custom colour" : "Pick a custom colour"
                 }
                 onClick={() => setIsCustomOpen(!isCustomOpen)}
+                overlay={
+                  // Once the wheel has been replaced by a flat colour, nothing
+                  // says the dab is still editable. The pen does.
+                  isCustomActive ? (
+                    <span style={{ color: inkOn(customPigment.hex) }}>
+                      <PencilIcon />
+                    </span>
+                  ) : null
+                }
               >
                 {isCustomActive ? null : (
                   // Until then it is a colour wheel with a plus through it, which
@@ -122,6 +150,30 @@ export function PigmentControls({
         ))}
       </div>
     </fieldset>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-3.5 w-3.5"
+      fill="none"
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M4 16.5V20h3.5L19 8.5 15.5 5 4 16.5z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M13.5 6.5 17 10"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
   );
 }
 
