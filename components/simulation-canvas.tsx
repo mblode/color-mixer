@@ -1,20 +1,33 @@
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FluidSimulation } from "../simulation/fluid";
 import type { BrushInput, SimulationStatus } from "../simulation/types";
-import { Button } from "./ui/button";
-import { Card } from "./ui/card";
+
+export interface SimulationHandle {
+  clear: () => void;
+}
 
 export interface SimulationCanvasProps {
   brushInput: BrushInput;
+  /** Lets the dock drive Clear, which lives outside this component now. */
+  handleRef?: RefObject<SimulationHandle | null>;
+  /** Surfaced in the dock rather than under the canvas. */
+  onErrorChange?: (message: string | null) => void;
 }
 
-export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
+export function SimulationCanvas({
+  brushInput,
+  handleRef,
+  onErrorChange,
+}: SimulationCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ringRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<FluidSimulation | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const isPointerDownRef = useRef(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const [canvasMinDimension, setCanvasMinDimension] = useState(0);
   const [status, setStatus] = useState<SimulationStatus>("idle");
   const [statusDetail, setStatusDetail] = useState<string>(
     "Waiting for initialization..."
@@ -58,6 +71,20 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
   useEffect(() => {
     simulationRef.current?.updateBrushInput(brushInput);
   }, [brushInput]);
+
+  // Written straight to the DOM rather than through state: a pointermove can
+  // arrive at the display's full refresh rate, and re-rendering the tree at
+  // that rate to move one ring would be the most expensive thing on screen.
+  const moveRing = useCallback(
+    (rect: DOMRect, clientX: number, clientY: number) => {
+      const ring = ringRef.current;
+      if (!ring) {
+        return;
+      }
+      ring.style.transform = `translate3d(${clientX - rect.left}px, ${clientY - rect.top}px, 0) translate(-50%, -50%)`;
+    },
+    []
+  );
 
   const pointerHandlers = useMemo(() => {
     // Read the canvas rect once per event — getBoundingClientRect forces a
@@ -104,6 +131,7 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         }
         activePointerIdRef.current = event.pointerId;
         isPointerDownRef.current = true;
+        moveRing(metrics.rect, event.clientX, event.clientY);
         canvasRef.current?.setPointerCapture(event.pointerId);
         simulationRef.current?.strokeBegin(
           toSample(
@@ -116,6 +144,14 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         );
       },
       onPointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        const metrics = canvasMetrics();
+        if (!metrics) {
+          return;
+        }
+        // The ring tracks the pointer whether or not a stroke is in progress,
+        // so the brush size is visible before you commit any paint.
+        moveRing(metrics.rect, event.clientX, event.clientY);
+
         if (
           !isPointerDownRef.current ||
           activePointerIdRef.current !== event.pointerId
@@ -123,10 +159,6 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
           return;
         }
         event.preventDefault();
-        const metrics = canvasMetrics();
-        if (!metrics) {
-          return;
-        }
         // Replay every coalesced sample the browser merged into this event so
         // fast strokes stay smooth rather than polygonal.
         const native = event.nativeEvent;
@@ -168,7 +200,20 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         activePointerIdRef.current = null;
         simulationRef.current?.strokeEnd();
       },
+      onPointerEnter: (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        // Touch has no hover, so a ring would be stranded wherever the last
+        // tap landed.
+        if (event.pointerType === "touch") {
+          return;
+        }
+        const metrics = canvasMetrics();
+        if (metrics) {
+          moveRing(metrics.rect, event.clientX, event.clientY);
+        }
+        setIsHovering(true);
+      },
       onPointerLeave: (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        setIsHovering(false);
         if (
           activePointerIdRef.current !== null &&
           activePointerIdRef.current !== event.pointerId
@@ -180,32 +225,68 @@ export function SimulationCanvas({ brushInput }: SimulationCanvasProps) {
         simulationRef.current?.strokeEnd();
       },
     };
+  }, [moveRing]);
+
+  useEffect(() => {
+    if (!handleRef) {
+      return;
+    }
+    handleRef.current = {
+      clear: () => simulationRef.current?.clearSurface(),
+    };
+    return () => {
+      handleRef.current = null;
+    };
+  }, [handleRef]);
+
+  useEffect(() => {
+    onErrorChange?.(status === "error" ? statusDetail : null);
+  }, [onErrorChange, status, statusDetail]);
+
+  // The ring has to be sized in CSS pixels, and the brush is a fraction of the
+  // canvas's smaller side, so that dimension has to be in render state.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setCanvasMinDimension(Math.min(width, height));
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
   }, []);
 
-  const handleClear = () => {
-    simulationRef.current?.clearSurface();
-  };
+  // Stroke.baseRadius is (settings.size * minDimension) / 2 in device pixels,
+  // so the ring's CSS diameter is size * the smaller CSS dimension.
+  const ringDiameter = brushInput.settings.size * canvasMinDimension;
 
-  const showDetail = status === "error";
   return (
-    <Card className="space-y-3 p-(--surface-inset)">
-      <div className="overflow-hidden rounded-control bg-white ring-1 ring-black/5">
-        <canvas
-          aria-label="Pigment canvas"
-          className="h-[60vh] w-full touch-none select-none"
-          onContextMenu={(event) => event.preventDefault()}
-          ref={canvasRef}
-          {...pointerHandlers}
-        />
-      </div>
-      <div className="flex items-center gap-3 px-1 pb-1">
-        <Button onClick={handleClear} size="sm" type="button" variant="outline">
-          Clear
-        </Button>
-        {showDetail ? (
-          <p className="text-destructive text-xs">{statusDetail}</p>
-        ) : null}
-      </div>
-    </Card>
+    <>
+      <canvas
+        aria-label="Pigment canvas"
+        // The ring is the cursor, so the arrow would only be a second,
+        // wrongly-sized pointer next to it.
+        className="absolute inset-0 h-full w-full cursor-none touch-none select-none"
+        onContextMenu={(event) => event.preventDefault()}
+        ref={canvasRef}
+        {...pointerHandlers}
+      />
+
+      {/* Dark ring with a light halo, so it stays visible over both bare
+          canvas and dark paint. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute top-0 left-0 rounded-full border border-black/70 shadow-[0_0_0_1px_rgba(255,255,255,0.85)]"
+        ref={ringRef}
+        style={{
+          height: ringDiameter,
+          width: ringDiameter,
+          opacity: isHovering ? 1 : 0,
+          borderStyle: brushInput.tool === "smudge" ? "dashed" : "solid",
+        }}
+      />
+    </>
   );
 }

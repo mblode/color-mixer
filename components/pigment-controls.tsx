@@ -2,8 +2,7 @@ import { useState } from "react";
 import { HexColorInput, HexColorPicker } from "react-colorful";
 
 import type { PigmentPreset } from "../lib/pigments";
-import { cn } from "../lib/utils";
-import { Card, CardContent } from "./ui/card";
+import { PigmentSwatch } from "./pigment-swatch";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 
 export interface PigmentControlsProps {
@@ -14,6 +13,16 @@ export interface PigmentControlsProps {
   onCustomColorChange: (hex: string) => void;
 }
 
+const PICKER_WHEEL =
+  "conic-gradient(from 180deg, #fdde5c, #f8ab5c, #f56a62, #a176c8, #759beb, #65beb3, #70db96, #fdde5c)";
+
+// The two facts a painter needs that the colour alone cannot show: which real
+// tube this is, and how far it goes in a mix.
+const pigmentDetail = (item: PigmentPreset) =>
+  [item.colorIndex, `strength ${item.tintingStrength}`]
+    .filter(Boolean)
+    .join(" · ");
+
 export function PigmentControls({
   palette,
   pigment,
@@ -23,7 +32,7 @@ export function PigmentControls({
 }: PigmentControlsProps) {
   const pigmentId = pigment?.id ?? "";
   const isCustomActive = pigmentId === customPigment.id;
-  const [isCustomOpen, setIsCustomOpen] = useState(isCustomActive);
+  const [isCustomOpen, setIsCustomOpen] = useState(false);
 
   const handleCustomChange = (next: string) => {
     onCustomColorChange(next);
@@ -31,108 +40,88 @@ export function PigmentControls({
   };
 
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <Popover
-            onOpenChange={(nextOpen) => {
-              setIsCustomOpen(nextOpen);
-              if (nextOpen) {
-                onSelectPigment(customPigment);
-              }
-            }}
-            open={isCustomOpen}
-          >
-            <PopoverTrigger asChild>
-              <button
-                aria-label={
-                  isCustomActive ? "Edit custom color" : "Custom color"
+    <fieldset className="min-w-0">
+      <legend className="sr-only">Pigment</legend>
+      <div className="grid grid-flow-col grid-rows-2 gap-2">
+        <Popover
+          onOpenChange={(nextOpen) => {
+            setIsCustomOpen(nextOpen);
+            if (nextOpen) {
+              onSelectPigment(customPigment);
+            }
+          }}
+          open={isCustomOpen}
+        >
+          <PopoverTrigger asChild>
+            <div>
+              <PigmentSwatch
+                detail={isCustomActive ? customPigment.hex : undefined}
+                // Once a colour is picked the dab behaves like any other
+                // pigment: its own ring, its own shrinking fill.
+                hex={isCustomActive ? customPigment.hex : undefined}
+                isActive={isCustomActive}
+                label={
+                  isCustomActive ? "Custom pigment" : "Pick a custom colour"
                 }
-                aria-pressed={isCustomActive}
-                className={cn(
-                  "group flex h-11 w-11 items-center justify-center rounded-full border transition-all",
-                  isCustomActive
-                    ? "border-foreground ring-2 ring-foreground/10"
-                    : "border-border/70 hover:border-foreground/30"
-                )}
-                type="button"
+                onClick={() => setIsCustomOpen(!isCustomOpen)}
               >
-                {isCustomActive ? (
-                  <div className="relative">
-                    <div
-                      className="h-9 w-9 rounded-full border border-white/70 shadow-sm"
-                      style={{ backgroundColor: customPigment.hex }}
+                {isCustomActive ? null : (
+                  // Until then it is a colour wheel with a plus through it, which
+                  // reads as "choose one" rather than as a muddy pigment.
+                  <>
+                    <span
+                      className="absolute inset-0 rounded-full"
+                      style={{ background: PICKER_WHEEL }}
                     />
-                    <span className="absolute inset-0 flex items-center justify-center text-white drop-shadow">
-                      <PencilIcon />
-                    </span>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <div
-                      className="h-9 w-9 rounded-full"
-                      style={{
-                        background:
-                          "conic-gradient(from 180deg, #fdde5c, #f8ab5c, #f56a62, #a176c8, #759beb, #65beb3, #70db96, #fdde5c)",
-                      }}
-                    />
-                    <div className="absolute inset-1.5 rounded-full bg-card" />
+                    <span className="absolute inset-[5px] rounded-full bg-card" />
                     <span className="absolute inset-0 flex items-center justify-center text-foreground">
                       <PlusIcon />
                     </span>
-                  </div>
+                  </>
                 )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-72" sideOffset={12}>
-              <div className="space-y-3">
-                <div className="rounded-control bg-muted/30 p-2">
-                  <HexColorPicker
-                    color={customPigment.hex}
-                    onChange={handleCustomChange}
-                  />
-                </div>
-                <HexColorInput
-                  aria-label="Custom pigment hex"
-                  className="flex h-10 w-full rounded-control border border-input bg-background px-3 py-2 font-mono text-foreground text-sm uppercase transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              </PigmentSwatch>
+            </div>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="w-72"
+            side="top"
+            sideOffset={12}
+          >
+            <div className="space-y-3">
+              <div className="rounded-control bg-muted/40 p-2">
+                <HexColorPicker
                   color={customPigment.hex}
                   onChange={handleCustomChange}
-                  placeholder="#RRGGBB"
-                  prefixed
                 />
               </div>
-            </PopoverContent>
-          </Popover>
-          {palette.map((item) => {
-            const isActive = item.id === pigmentId;
-            return (
-              <button
-                aria-label={item.name}
-                aria-pressed={isActive}
-                className={cn(
-                  "group flex h-11 w-11 items-center justify-center rounded-full border transition-all",
-                  isActive
-                    ? "border-foreground ring-2 ring-foreground/10"
-                    : "border-border/70 hover:border-foreground/30"
-                )}
-                key={item.id}
-                onClick={() => {
-                  onSelectPigment(item);
-                  setIsCustomOpen(false);
-                }}
-                title={item.name}
-                type="button"
-              >
-                <span
-                  className="h-9 w-9 rounded-full border border-white/70 shadow-sm"
-                  style={{ backgroundColor: item.hex }}
-                />
-              </button>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
+              <HexColorInput
+                aria-label="Custom pigment hex"
+                className="flex h-10 w-full rounded-control border border-input bg-background px-3 py-2 font-mono text-foreground text-sm uppercase transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                color={customPigment.hex}
+                onChange={handleCustomChange}
+                placeholder="#RRGGBB"
+                prefixed
+              />
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {palette.map((item) => (
+          <PigmentSwatch
+            detail={pigmentDetail(item)}
+            hex={item.hex}
+            isActive={item.id === pigmentId}
+            key={item.id}
+            label={item.name}
+            onClick={() => {
+              onSelectPigment(item);
+              setIsCustomOpen(false);
+            }}
+          />
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
@@ -143,26 +132,7 @@ function PlusIcon() {
         d="M12 5v14M5 12h14"
         stroke="currentColor"
         strokeLinecap="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-function PencilIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <path
-        d="M4 16.5V20h3.5L19 8.5 15.5 5 4 16.5z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-      <path
-        d="M13.5 6.5 17 10"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="2"
+        strokeWidth="2.5"
       />
     </svg>
   );
