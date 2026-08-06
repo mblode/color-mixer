@@ -155,13 +155,13 @@ function App() {
             state, and it collapses out of the way of the dock.
           */}
           <details className="group pointer-events-auto relative">
-            <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-full bg-card/70 px-3 py-1.5 text-muted-foreground ring-1 ring-black/5 backdrop-blur-xl transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-full bg-card/70 px-3 py-1.5 text-muted-foreground ring-1 ring-inset ring-black/5 backdrop-blur-xl transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
               <h2 className="font-medium text-xs">How the mixing works</h2>
               <ChevronIcon />
             </summary>
 
             {/* Absolute so opening it never reflows the header row. */}
-            <div className="absolute top-full left-0 z-10 mt-2 w-[min(58ch,calc(100vw-2.5rem))] space-y-3 rounded-surface bg-card/95 p-5 text-muted-foreground text-sm leading-relaxed shadow-[0_18px_50px_-24px_rgba(15,10,6,0.5)] ring-1 ring-black/10 backdrop-blur-xl">
+            <div className="absolute top-full left-0 z-10 mt-2 w-[min(58ch,calc(100vw-2.5rem))] space-y-3 rounded-surface bg-card/95 p-5 text-muted-foreground text-sm leading-relaxed shadow-[0_8px_30px_-6px_rgba(15,10,6,0.18)] ring-1 ring-inset ring-black/10 backdrop-blur-xl">
               <p>
                 Mixing colours on a screen means averaging RGB, which is why
                 blue and yellow give you grey there and green everywhere else.
@@ -245,7 +245,10 @@ function App() {
               only be visible by its shadow. */}
           {/* No overflow clipping: the swatch tooltips have to escape upward,
               and flex-wrap already handles narrow viewports. */}
-          <div className="dock pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-3 rounded-surface bg-background/85 p-(--surface-inset) shadow-[0_18px_50px_-24px_rgba(15,10,6,0.5)] ring-1 ring-black/10 backdrop-blur-xl sm:gap-5">
+          {/* Inset ring, not an outset one: an outset ring paints outside the
+              backdrop-filtered box and seams against it, which reads as a
+              second edge along the bottom where the shadow makes it legible. */}
+          <div className="dock pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-3 rounded-surface bg-background/85 p-(--surface-inset) shadow-[0_8px_30px_-6px_rgba(15,10,6,0.18)] ring-1 ring-inset ring-black/10 backdrop-blur-xl sm:gap-5">
             <PigmentControls
               customPigment={customPigment}
               onCustomColorChange={handleCustomColorChange}
