@@ -66,16 +66,20 @@
  * pigment too. Still a native <input type="range">, so keyboard control and
  * the value semantics come for free; only the paint is ours.
  *
- * --range-fill, --range-thumb and --range-dot are set per instance. The thumb
- * itself is a fixed size so the grab target never moves; only --range-dot, the
- * radius of the coloured disc painted inside it, tracks the value. That is what
- * lets the size slider's thumb double as the brush preview.
+ * --range-fill, --range-thumb, --range-dot and --range-dot-ring are set per
+ * instance. The thumb itself is a fixed size so the grab target never moves;
+ * only --range-dot, the radius of the coloured disc painted inside it, tracks
+ * the value. That is what lets the size slider's thumb double as the brush
+ * preview.
  */
 .range {
   --range-thumb-size: 22px;
   --range-dot: 8px;
   --range-fill: hsl(var(--muted));
   --range-thumb: hsl(var(--foreground));
+  /* Set to the card colour for any pigment dark enough to hold its own edge,
+     so the ring below disappears rather than outlining a dark dot for nothing. */
+  --range-dot-ring: hsl(var(--card));
   -webkit-appearance: none;
   appearance: none;
   height: 28px;
@@ -101,12 +105,12 @@
   height: var(--range-thumb-size);
   border: none;
   border-radius: 999px;
-  /* The 1px dark step keeps the dot visible when the pigment is titanium
-     white, which would otherwise be white-on-white. */
+  /* --range-dot-ring only shows for a pigment too pale to read against the
+     white thumb; otherwise it matches the thumb and vanishes. */
   background: radial-gradient(
     circle at 50% 50%,
     var(--range-thumb) 0 calc(var(--range-dot) - 0.5px),
-    rgba(15, 10, 6, 0.2) var(--range-dot) calc(var(--range-dot) + 1px),
+    var(--range-dot-ring) var(--range-dot) calc(var(--range-dot) + 1px),
     hsl(var(--card)) calc(var(--range-dot) + 1px) 100%
   );
   /* Outer hairline so a white pigment still reads against the track. */
@@ -120,12 +124,12 @@
   height: var(--range-thumb-size);
   border: none;
   border-radius: 999px;
-  /* The 1px dark step keeps the dot visible when the pigment is titanium
-     white, which would otherwise be white-on-white. */
+  /* --range-dot-ring only shows for a pigment too pale to read against the
+     white thumb; otherwise it matches the thumb and vanishes. */
   background: radial-gradient(
     circle at 50% 50%,
     var(--range-thumb) 0 calc(var(--range-dot) - 0.5px),
-    rgba(15, 10, 6, 0.2) var(--range-dot) calc(var(--range-dot) + 1px),
+    var(--range-dot-ring) var(--range-dot) calc(var(--range-dot) + 1px),
     hsl(var(--card)) calc(var(--range-dot) + 1px) 100%
   );
   box-shadow:
