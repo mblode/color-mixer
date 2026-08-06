@@ -83,19 +83,19 @@ export function PigmentControls({
                   isCustomActive ? "Edit custom colour" : "Pick a custom colour"
                 }
                 onClick={() => setIsCustomOpen(!isCustomOpen)}
-                overlay={
-                  // Once the wheel has been replaced by a flat colour, nothing
-                  // says the dab is still editable. The pen does.
-                  isCustomActive ? (
-                    <span style={{ color: inkOn(customPigment.hex) }}>
-                      <PencilIcon />
-                    </span>
-                  ) : null
-                }
               >
-                {isCustomActive ? null : (
-                  // Until then it is a colour wheel with a plus through it, which
-                  // reads as "choose one" rather than as a muddy pigment.
+                {isCustomActive ? (
+                  // Once the wheel is replaced by a flat colour, nothing says
+                  // the dab is still editable. The pen does.
+                  <span
+                    className="absolute inset-0 flex items-center justify-center"
+                    style={{ color: inkOn(customPigment.hex) }}
+                  >
+                    <PencilIcon />
+                  </span>
+                ) : (
+                  // Until then it is a colour wheel with a plus through it,
+                  // which reads as "choose one" rather than a muddy pigment.
                   <>
                     <span
                       className="absolute inset-0 rounded-full"
