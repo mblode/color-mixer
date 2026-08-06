@@ -5,6 +5,32 @@ const nextConfig: NextConfig = {
   basePath: "/color-mixer",
   experimental: { turbopackRustReactCompiler: true },
   reactCompiler: true,
+  // No full Content-Security-Policy: Next's inline bootstrap and the JSON-LD
+  // script would need a nonce, which forces this page off static prerender.
+  // HSTS is already set at the blode.co origin.
+  headers() {
+    return Promise.resolve([
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          {
+            key: "Permissions-Policy",
+            value:
+              "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'self'",
+          },
+        ],
+      },
+    ]);
+  },
   redirects() {
     return Promise.resolve([
       {

@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://blode.co/color-mixer/sitemap.xml

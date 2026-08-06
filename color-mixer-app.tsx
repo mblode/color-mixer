@@ -48,6 +48,18 @@ const statusLabel = {
   unsupported: "WebGPU unavailable",
 };
 
+// Inline rather than an icon package: one path, one use.
+const GitHubMark = () => (
+  <svg
+    aria-hidden="true"
+    className="h-4 w-4"
+    fill="currentColor"
+    viewBox="0 0 16 16"
+  >
+    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+  </svg>
+);
+
 function App() {
   const [capability, setCapability] =
     useState<WebGPUCapabilityResult>(initialStatus);
@@ -121,13 +133,25 @@ function App() {
   return (
     <div className="min-h-screen">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
-        <header className="flex flex-col gap-2">
-          <h1 className="font-semibold text-3xl text-foreground tracking-tight sm:text-4xl">
-            Colour mixer
-          </h1>
-          {capability.status === "unsupported" ? (
-            <p className="text-muted-foreground text-sm">{statusText}</p>
-          ) : null}
+        <header className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-2">
+            <h1 className="font-semibold text-3xl text-foreground tracking-tight sm:text-4xl">
+              Colour mixer
+            </h1>
+            {capability.status === "unsupported" ? (
+              <p className="text-muted-foreground text-sm">{statusText}</p>
+            ) : null}
+          </div>
+          <Button asChild size="sm" variant="ghost">
+            <a
+              href="https://github.com/mblode/color-mixer"
+              rel="noreferrer"
+              target="_blank"
+            >
+              <GitHubMark />
+              GitHub
+            </a>
+          </Button>
         </header>
 
         <main className="grid gap-6 lg:grid-cols-[360px_1fr]">
@@ -188,34 +212,27 @@ function App() {
           </h2>
 
           <p>
-            This is a pigment mixer rather than a colour blender. Mixing colours
-            on a screen normally means averaging RGB, which is why blue and
-            yellow give you a dead grey there and give you green everywhere
-            else. Here each colour is converted into Mixbox&apos;s latent
-            pigment space and mixed in that instead, so blue dragged through
-            yellow turns green, and white pulls a colour back to a tint rather
-            than just raising its brightness.
+            Mixing colours on a screen means averaging RGB, which is why blue
+            and yellow give you grey there and green everywhere else. Here every
+            colour goes into Mixbox’s latent pigment space first. Blue dragged
+            through yellow turns green. White pulls a colour back to a tint
+            instead of just brightening it.
           </p>
 
           <p>
-            The palette is real paint, not screen primaries. The masstones come
-            from the Mixbox reference pigment set and each one keeps its Colour
-            Index name, so cadmium yellow is PY35 and phthalo blue is PB15, the
-            same codes on the side of a real tube. The previous palette used
-            display primaries, which are more saturated than any paint you can
-            actually buy.
+            The palette is real paint. Each masstone keeps its Colour Index
+            name, so cadmium yellow is PY35 and phthalo blue is PB15, the same
+            codes on the side of the tube.
           </p>
 
           <p>
-            Every pigment also carries a tinting strength, which is the part
-            that catches people who have not painted. Phthalo blue sits at 3 and
-            titanium white at 0.5, so a small amount of phthalo swallows a large
-            amount of white and the ratios stop being symmetrical: half and half
-            on the canvas is nothing like half and half in the result. Pick two,
-            set the brush radius and flow, and drag one through the other to
-            watch it happen. The simulation runs on WebGPU, so it needs a
-            browser that has it.
+            Every pigment also carries a tinting strength, and that’s the part
+            that catches you. Phthalo blue sits at 3, titanium white at 0.5. A
+            little phthalo swallows a lot of white, so half and half on the
+            canvas is nothing like half and half in the result.
           </p>
+
+          <p>Pick two and drag one through the other.</p>
         </section>
       </div>
     </div>
