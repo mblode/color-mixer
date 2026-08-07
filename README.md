@@ -18,7 +18,7 @@ Blue over yellow gives you green here, not the grey an RGB blend would give you.
 
 <p>
 <a href="https://blode.co/color-mixer">
-<img alt="View demo" src=".github/assets/demo.svg" width="200" />
+<img alt="Try it" src=".github/assets/demo.svg" width="200" />
 </a>
 </p>
 
