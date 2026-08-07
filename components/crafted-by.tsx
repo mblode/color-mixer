@@ -1,23 +1,40 @@
+/*
+ * blode.co and blode.co/projects are this same origin behind a rewrite, so both
+ * are internal links: same tab, and no rel="noopener noreferrer", which only
+ * means something cross-origin. The projects link is the edge back to the hub,
+ * without which this zone is a dead end for crawlers and readers. See
+ * blode-co/apps/web/.claude/knowledge/zone-conventions.md.
+ */
 export function CraftedBy() {
   return (
-    <a
-      className="inline-flex items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
-      href="https://blode.co"
-      rel="author noreferrer"
-      target="_blank"
-    >
-      <span>Crafted by</span>
-      {/* Self-hosted avatar; intentionally a plain img, not next/image. */}
-      {/* biome-ignore lint/performance/noImgElement: self-hosted, fixed 20px */}
-      <img
-        alt="Matthew Blode"
-        className="rounded-full"
-        height={20}
-        loading="lazy"
-        src="/color-mixer/avatar-sm.png"
-        width={20}
-      />
-      <span>Matthew Blode</span>
-    </a>
+    <span className="inline-flex flex-wrap items-center gap-x-2">
+      <a
+        className="inline-flex items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
+        href="https://blode.co"
+        rel="author"
+      >
+        <span>Crafted by</span>
+        {/* Self-hosted avatar; intentionally a plain img, not next/image. */}
+        {/* biome-ignore lint/performance/noImgElement: self-hosted, fixed 20px */}
+        <img
+          alt="Matthew Blode"
+          className="rounded-full"
+          height={20}
+          loading="lazy"
+          src="/color-mixer/avatar-sm.png"
+          width={20}
+        />
+        <span>Matthew Blode</span>
+      </a>
+      <span aria-hidden="true" className="text-muted-foreground">
+        &middot;
+      </span>
+      <a
+        className="inline-flex items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
+        href="https://blode.co/projects"
+      >
+        All projects
+      </a>
+    </span>
   );
 }

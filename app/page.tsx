@@ -1,27 +1,23 @@
 import ColorMixerApp from "../color-mixer-app";
 
-const personId = "https://blode.co/#matthew-blode";
+/*
+ * The host graph. blode.co/color-mixer is a path on blode.co behind a rewrite,
+ * not a site of its own, so the Person, Organization and WebSite nodes are
+ * referenced by @id and never redefined here. The Person id was
+ * `blode.co/#matthew-blode`, which matched nothing blode.co publishes and so
+ * resolved to a second, empty person. Contract:
+ * blode-co/apps/web/.claude/knowledge/zone-conventions.md
+ */
+const personId = "https://blode.co/#person";
+const orgId = "https://blode.co/#organization";
 const websiteId = "https://blode.co/#website";
+const breadcrumbId = "https://blode.co/color-mixer/#breadcrumb";
 
 // One @graph with stable @ids, so each entity is defined once and referenced
 // by @id rather than duplicated inline.
 const structuredData = {
   "@context": "https://schema.org",
   "@graph": [
-    {
-      "@type": "Person",
-      "@id": personId,
-      name: "Matthew Blode",
-      url: "https://blode.co",
-    },
-    {
-      "@type": "WebSite",
-      "@id": websiteId,
-      name: "Blode",
-      url: "https://blode.co",
-      inLanguage: "en-GB",
-      publisher: { "@id": personId },
-    },
     {
       // A WebPage, not a WebApplication. WebApplication is a
       // SoftwareApplication subtype, which validators hold to Google's Software
@@ -31,7 +27,7 @@ const structuredData = {
       // description, where a reader gets it before opening the page rather than
       // after it fails to start.
       "@type": "WebPage",
-      "@id": "https://blode.co/color-mixer#webpage",
+      "@id": "https://blode.co/color-mixer/#webpage",
       name: "Colour mixer",
       // No trailing slash, matching alternates.canonical in app/layout.tsx.
       url: "https://blode.co/color-mixer",
@@ -46,10 +42,37 @@ const structuredData = {
       inLanguage: "en-GB",
       isPartOf: { "@id": websiteId },
       creator: { "@id": personId },
+      publisher: { "@id": orgId },
+      breadcrumb: { "@id": breadcrumbId },
       primaryImageOfPage: {
         "@type": "ImageObject",
         url: "https://blode.co/color-mixer/opengraph-image.png",
       },
+    },
+    // Starts at the blode.co root, not at this zone.
+    {
+      "@type": "BreadcrumbList",
+      "@id": breadcrumbId,
+      itemListElement: [
+        {
+          "@type": "ListItem",
+          position: 1,
+          name: "Home",
+          item: "https://blode.co/",
+        },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: "Projects",
+          item: "https://blode.co/projects",
+        },
+        {
+          "@type": "ListItem",
+          position: 3,
+          name: "Colour mixer",
+          item: "https://blode.co/color-mixer",
+        },
+      ],
     },
   ],
 };
