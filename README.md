@@ -8,6 +8,10 @@ Pick a pigment, drag across the canvas, and watch the paint flow and blend the w
 
 </div>
 
+<p align="center">
+  <img alt="Pigments blending on the fluid canvas" src=".github/assets/screenshot.png" width="800" />
+</p>
+
 ## Demo
 
 Blue over yellow gives you green here, not the grey an RGB blend would give you.
