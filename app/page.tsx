@@ -28,7 +28,7 @@ const structuredData = {
       // after it fails to start.
       "@type": "WebPage",
       "@id": "https://blode.co/color-mixer/#webpage",
-      name: "Colour mixer",
+      name: "Colour Mixer",
       // No trailing slash, matching alternates.canonical in app/layout.tsx.
       url: "https://blode.co/color-mixer",
       description:
@@ -49,7 +49,11 @@ const structuredData = {
         url: "https://blode.co/color-mixer/opengraph-image.png",
       },
     },
-    // Starts at the blode.co root, not at this zone.
+    // Starts at the blode.co root, not at this zone. The root crumb is named
+    // for the person rather than "Home": it is the one piece of chrome this
+    // page shows above the fold. `components/zone-breadcrumb` renders the same
+    // trail visibly and Google treats a mismatch as a markup error, so the two
+    // change together.
     {
       "@type": "BreadcrumbList",
       "@id": breadcrumbId,
@@ -57,7 +61,7 @@ const structuredData = {
         {
           "@type": "ListItem",
           position: 1,
-          name: "Home",
+          name: "Matthew Blode",
           item: "https://blode.co/",
         },
         {
@@ -69,7 +73,7 @@ const structuredData = {
         {
           "@type": "ListItem",
           position: 3,
-          name: "Colour mixer",
+          name: "Colour Mixer",
           item: "https://blode.co/color-mixer",
         },
       ],

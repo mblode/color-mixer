@@ -25,15 +25,25 @@ const glideMono = localFont({
 });
 
 const siteUrl = "https://blode.co/color-mixer";
-const title = "Colour mixer - mix and blend colours online";
+// Product first, then a colon, under 60 characters. Not a pipe, not a dash.
+// "Colour Mixer" is what blode.co/projects calls it; the breadcrumb, the h1 and
+// the structured data all have to agree with that and with each other.
+const productName = "Colour Mixer";
+const title = `${productName}: mix and blend colours online`;
 const description =
   "Mix and blend colours online with an interactive colour mixer. Experiment with pigment combinations and create beautiful colour palettes in your browser.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://blode.co"),
-  applicationName: "Colour mixer",
-  title,
+  applicationName: productName,
+  title: {
+    default: title,
+    template: `%s | ${productName}`,
+  },
   description,
+  authors: [{ name: "Matthew Blode", url: "https://blode.co" }],
+  creator: "Matthew Blode",
+  publisher: "Matthew Blode",
   alternates: {
     canonical: siteUrl,
   },
@@ -53,7 +63,10 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    siteName: "Colour mixer",
+    // The person, not the product. All 33 zones are one site, and the product
+    // name is already in og:title, so this is the only slot in the card that
+    // can say who made the thing.
+    siteName: "Matthew Blode",
     locale: "en_GB",
     url: siteUrl,
     title,
@@ -61,18 +74,19 @@ export const metadata: Metadata = {
     images: [
       {
         url: "/color-mixer/opengraph-image.png",
-        alt: "Colour mixer - an interactive online pigment-mixing tool",
+        alt: `${productName}: an interactive online pigment-mixing tool`,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
+    creator: "@mattblode",
     title,
     description,
     images: [
       {
         url: "/color-mixer/opengraph-image.png",
-        alt: "Colour mixer - an interactive online pigment-mixing tool",
+        alt: `${productName}: an interactive online pigment-mixing tool`,
       },
     ],
   },
