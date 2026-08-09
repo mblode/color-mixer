@@ -12,6 +12,7 @@ import {
   SimulationCanvas,
 } from "./components/simulation-canvas";
 import { Button } from "./components/ui/button";
+import { ZoneBreadcrumb } from "./components/zone-breadcrumb";
 import { DEFAULT_TINTING_STRENGTH } from "./lib/color/mix-engine";
 import { hexToPigmentLatent } from "./lib/mixbox";
 import { type PigmentPreset, pigmentPalette } from "./lib/pigments";
@@ -144,50 +145,57 @@ function App() {
       ) : null}
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-4 p-5 sm:p-6">
-        <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4">
-          <h1 className="pointer-events-auto font-semibold text-foreground text-xl tracking-tight sm:text-2xl">
-            Colour mixer
-          </h1>
+        <div className="flex min-w-0 flex-col items-start gap-2">
+          {/* Root page only, and it has to match the BreadcrumbList in
+              app/page.tsx exactly. */}
+          <div className="pointer-events-auto">
+            <ZoneBreadcrumb product="Colour Mixer" />
+          </div>
 
-          {/*
+          <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <h1 className="pointer-events-auto font-semibold text-foreground text-xl tracking-tight sm:text-2xl">
+              Colour Mixer
+            </h1>
+
+            {/*
             A native <details>, so the prose stays in the server-rendered HTML
             and indexable while the canvas keeps the whole viewport. No JS, no
             state, and it collapses out of the way of the dock.
           */}
-          <details className="group pointer-events-auto relative">
-            <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-full bg-card/70 px-3 py-1.5 text-muted-foreground ring-1 ring-inset ring-black/5 backdrop-blur-xl transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-              <h2 className="font-medium text-xs">How the mixing works</h2>
-              <ChevronIcon />
-            </summary>
+            <details className="group pointer-events-auto relative">
+              <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-full bg-card/70 px-3 py-1.5 text-muted-foreground ring-1 ring-inset ring-black/5 backdrop-blur-xl transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                <h2 className="font-medium text-xs">How the mixing works</h2>
+                <ChevronIcon />
+              </summary>
 
-            {/* Absolute so opening it never reflows the header row. */}
-            <div className="absolute top-full left-0 z-10 mt-2 w-[min(58ch,calc(100vw-2.5rem))] space-y-3 rounded-surface bg-card/95 p-5 text-muted-foreground text-sm leading-relaxed shadow-[0_8px_30px_-6px_rgba(15,10,6,0.18)] ring-1 ring-inset ring-black/10 backdrop-blur-xl">
-              <p>
-                Mixing colours on a screen means averaging RGB, which is why
-                blue and yellow give you grey there and green everywhere else.
-                Here every colour goes into Mixbox’s latent pigment space first.
-                Blue dragged through yellow turns green. White pulls a colour
-                back to a tint instead of just brightening it.
-              </p>
+              {/* Absolute so opening it never reflows the header row. */}
+              <div className="absolute top-full left-0 z-10 mt-2 w-[min(58ch,calc(100vw-2.5rem))] space-y-3 rounded-surface bg-card/95 p-5 text-muted-foreground text-sm leading-relaxed shadow-[0_8px_30px_-6px_rgba(15,10,6,0.18)] ring-1 ring-inset ring-black/10 backdrop-blur-xl">
+                <p>
+                  Mixing colours on a screen means averaging RGB, which is why
+                  blue and yellow give you grey there and green everywhere else.
+                  Here every colour goes into Mixbox’s latent pigment space
+                  first. Blue dragged through yellow turns green. White pulls a
+                  colour back to a tint instead of just brightening it.
+                </p>
 
-              <p>
-                The palette is real paint. Each masstone keeps its Colour Index
-                name, so cadmium yellow is PY35 and phthalo blue is PB15, the
-                same codes on the side of the tube.
-              </p>
+                <p>
+                  The palette is real paint. Each masstone keeps its Colour
+                  Index name, so cadmium yellow is PY35 and phthalo blue is
+                  PB15, the same codes on the side of the tube.
+                </p>
 
-              <p>
-                Every pigment also carries a tinting strength, and that’s the
-                part that catches you. Phthalo blue sits at 3, titanium white at
-                0.5. A little phthalo swallows a lot of white, so half and half
-                on the canvas is nothing like half and half in the result.
-              </p>
+                <p>
+                  Every pigment also carries a tinting strength, and that’s the
+                  part that catches you. Phthalo blue sits at 3, titanium white
+                  at 0.5. A little phthalo swallows a lot of white, so half and
+                  half on the canvas is nothing like half and half in the
+                  result.
+                </p>
 
-              <p>Pick two and drag one through the other.</p>
-
-              <CraftedBy />
-            </div>
-          </details>
+                <p>Pick two and drag one through the other.</p>
+              </div>
+            </details>
+          </div>
         </div>
 
         <Button
@@ -239,55 +247,68 @@ function App() {
         </CanvasMessage>
       ) : null}
 
-      {isSupported ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center p-4 sm:p-6">
-          {/* Warm tint, not bg-card: a white surface over a white canvas would
+      {/* The dock is gated on WebGPU, the credit is not: `isSupported` only
+          becomes true in an effect, so anything inside that branch is missing
+          from the server-rendered HTML a crawler reads. A column, so the two
+          never overlap on a narrow viewport. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 p-4 sm:p-6">
+        {isSupported ? (
+          <>
+            {/* Warm tint, not bg-card: a white surface over a white canvas would
               only be visible by its shadow. */}
-          {/* No overflow clipping: the swatch tooltips have to escape upward,
+            {/* No overflow clipping: the swatch tooltips have to escape upward,
               and flex-wrap already handles narrow viewports. */}
-          {/* Inset ring, not an outset one: an outset ring paints outside the
+            {/* Inset ring, not an outset one: an outset ring paints outside the
               backdrop-filtered box and seams against it, which reads as a
               second edge along the bottom where the shadow makes it legible. */}
-          <div className="dock pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-3 rounded-surface bg-background/85 p-(--surface-inset) shadow-[0_8px_30px_-6px_rgba(15,10,6,0.18)] ring-1 ring-inset ring-black/10 backdrop-blur-xl sm:gap-5">
-            <PigmentControls
-              customPigment={customPigment}
-              onCustomColorChange={handleCustomColorChange}
-              onSelectPigment={setPigment}
-              palette={pigmentPalette}
-              pigment={pigment}
-            />
+            <div className="dock pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-3 rounded-surface bg-background/85 p-(--surface-inset) shadow-[0_8px_30px_-6px_rgba(15,10,6,0.18)] ring-1 ring-inset ring-black/10 backdrop-blur-xl sm:gap-5">
+              <PigmentControls
+                customPigment={customPigment}
+                onCustomColorChange={handleCustomColorChange}
+                onSelectPigment={setPigment}
+                palette={pigmentPalette}
+                pigment={pigment}
+              />
 
-            <span
-              aria-hidden="true"
-              className="hidden h-14 w-px bg-black/5 lg:block"
-            />
+              <span
+                aria-hidden="true"
+                className="hidden h-14 w-px bg-black/5 lg:block"
+              />
 
-            <BrushControls
-              flow={brushFlow}
-              onFlowChange={setBrushFlow}
-              onRadiusChange={setBrushRadius}
-              onToolChange={setTool}
-              pigmentHex={pigment.hex}
-              radius={brushRadius}
-              tool={tool}
-            />
+              <BrushControls
+                flow={brushFlow}
+                onFlowChange={setBrushFlow}
+                onRadiusChange={setBrushRadius}
+                onToolChange={setTool}
+                pigmentHex={pigment.hex}
+                radius={brushRadius}
+                tool={tool}
+              />
 
-            <span
-              aria-hidden="true"
-              className="hidden h-14 w-px bg-black/5 lg:block"
-            />
+              <span
+                aria-hidden="true"
+                className="hidden h-14 w-px bg-black/5 lg:block"
+              />
 
-            <Button
-              onClick={handleClear}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
-      ) : null}
+              <Button
+                onClick={handleClear}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Clear
+              </Button>
+            </div>
+          </>
+        ) : null}
+
+        {/* A real contentinfo landmark. This used to be a credit inside the
+            "How the mixing works" disclosure, which a closed <details> keeps
+            out of the accessibility tree entirely. */}
+        <footer className="pointer-events-auto rounded-full bg-background/85 px-3 py-1.5 ring-1 ring-inset ring-black/10 backdrop-blur-xl">
+          <CraftedBy />
+        </footer>
+      </div>
     </div>
   );
 }

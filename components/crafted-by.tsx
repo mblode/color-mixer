@@ -15,9 +15,13 @@ export function CraftedBy() {
       >
         <span>Crafted by</span>
         {/* Self-hosted avatar; intentionally a plain img, not next/image. */}
+        {/* alt is empty on purpose: the name is right there in text either
+            side of this image, so a described avatar makes the link's
+            accessible name read "Matthew Blode Matthew Blode". An image next
+            to its own label is decorative, and alt="" is how you say so. */}
         {/* biome-ignore lint/performance/noImgElement: self-hosted, fixed 20px */}
         <img
-          alt="Matthew Blode"
+          alt=""
           className="rounded-full"
           height={20}
           loading="lazy"
