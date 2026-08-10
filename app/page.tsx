@@ -46,7 +46,7 @@ const structuredData = {
       breadcrumb: { "@id": breadcrumbId },
       primaryImageOfPage: {
         "@type": "ImageObject",
-        url: "https://blode.co/color-mixer/opengraph-image.png",
+        url: "https://blode.co/color-mixer/opengraph-image",
       },
     },
     // Starts at the blode.co root, not at this zone. The root crumb is named

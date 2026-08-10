@@ -34,7 +34,12 @@ const description =
   "Mix and blend colours online with an interactive colour mixer. Experiment with pigment combinations and create beautiful colour palettes in your browser.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://blode.co"),
+  // The zone URL, not the bare origin (Rule 11). Only correct because the card
+  // is a generated `opengraph-image.tsx` route: Next does not prefix those with
+  // `basePath`, so `metadataBase` supplies the prefix exactly once. Against the
+  // static PNG this replaced, the two would have stacked into
+  // `/color-mixer/color-mixer/…`.
+  metadataBase: new URL(siteUrl),
   applicationName: productName,
   title: {
     default: title,
@@ -47,20 +52,24 @@ export const metadata: Metadata = {
   alternates: {
     canonical: siteUrl,
   },
-  manifest: "/color-mixer/site.webmanifest",
+  // Paths without `/color-mixer`: `metadataBase` already carries the zone, and
+  // Next joins rather than replaces, so spelling the prefix here would double.
+  manifest: "/site.webmanifest",
   category: "DesignApplication",
   icons: {
     icon: [
-      { url: "/color-mixer/favicon.ico", sizes: "32x32" },
-      { url: "/color-mixer/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
       {
-        url: "/color-mixer/favicon-96x96.png",
+        url: "/favicon-96x96.png",
         sizes: "96x96",
         type: "image/png",
       },
     ],
-    apple: [{ url: "/color-mixer/apple-touch-icon.png" }],
+    apple: [{ url: "/apple-touch-icon.png" }],
   },
+  // No `images` here: `app/opengraph-image.tsx` is the card. Next reuses it for
+  // `twitter:image` too when there is no `twitter-image` file.
   openGraph: {
     type: "website",
     // The person, not the product. All 33 zones are one site, and the product
@@ -71,24 +80,12 @@ export const metadata: Metadata = {
     url: siteUrl,
     title,
     description,
-    images: [
-      {
-        url: "/color-mixer/opengraph-image.png",
-        alt: `${productName}: an interactive online pigment-mixing tool`,
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     creator: "@mattblode",
     title,
     description,
-    images: [
-      {
-        url: "/color-mixer/opengraph-image.png",
-        alt: `${productName}: an interactive online pigment-mixing tool`,
-      },
-    ],
   },
 };
 
