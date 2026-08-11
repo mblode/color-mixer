@@ -26,8 +26,8 @@ const glideMono = localFont({
 
 const siteUrl = "https://blode.co/color-mixer";
 // Product first, then a colon, under 60 characters. Not a pipe, not a dash.
-// "Colour Mixer" is what blode.co/projects calls it; the breadcrumb, the h1 and
-// the structured data all have to agree with that and with each other.
+// "Colour Mixer" is what blode.co/projects calls it; the breadcrumb and the
+// structured data all have to agree with that and with each other.
 const productName = "Colour Mixer";
 const title = `${productName}: mix and blend colours online`;
 const description =

@@ -1,16 +1,6 @@
 /**
  * The trail back to the hub, rendered at the top of a zone's ROOT page.
  *
- * This file is the reference implementation. It is copied verbatim into each
- * zone repo (they are separate Next apps and cannot import from here), so keep
- * it dependency-free: no `next/link`, no icon package, no local `cn()`.
- *
- * Why it exists: `blode.co/hn` draws more visitors than any other page on the
- * site and bounces at 0.80. Its only edge back to the hub is a footer credit
- * sitting under an infinite-scroll feed, which in practice nobody reaches.
- * `zone-conventions.md` Rule 4 already asked for a visible trail; nothing
- * rendered one.
- *
  * Three constraints, all of them load-bearing:
  *
  * 1. **Absolute `https://blode.co` hrefs.** A bare `href="/"` is not
@@ -29,52 +19,38 @@
  * would just be noise.
  */
 
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+
 const HOME = "https://blode.co";
 const PROJECTS = `${HOME}/projects`;
 
-const Separator = () => (
-  // Decorative: the <ol> already conveys the structure to assistive tech.
-  //
-  // Spelled `aria-hidden="true"`, not bare. JSX would render the bare form as
-  // `aria-hidden="true"` anyway, but this component gets hand-translated into
-  // static HTML for the non-React zones (marx, burger), and in HTML
-  // `aria-hidden=""` is an invalid value for an enumerated attribute, so it is
-  // treated as unset and every `›` gets announced.
-  <span aria-hidden="true" className="select-none opacity-40">
-    ›
-  </span>
-);
-
 export const ZoneBreadcrumb = ({ product }: { product: string }) => (
-  <nav aria-label="Breadcrumb" className="text-[13px] text-muted-foreground">
-    <ol className="flex flex-wrap items-center gap-1.5">
-      <li className="flex items-center gap-1.5">
+  <Breadcrumb>
+    <BreadcrumbList>
+      <BreadcrumbItem>
         {/*
           `rel="author"` marks this as the identity edge, matching the footer
           credit. Only this crumb carries it; /projects is a collection.
         */}
-        <a
-          className="underline decoration-current/25 underline-offset-2 transition-colors hover:text-foreground hover:decoration-current"
-          href={HOME}
-          rel="author"
-        >
+        <BreadcrumbLink href={HOME} rel="author">
           Matthew Blode
-        </a>
-        <Separator />
-      </li>
-      <li className="flex items-center gap-1.5">
-        <a
-          className="underline decoration-current/25 underline-offset-2 transition-colors hover:text-foreground hover:decoration-current"
-          href={PROJECTS}
-        >
-          Projects
-        </a>
-        <Separator />
-      </li>
-      {/* The current page is not a link, and says so. */}
-      <li aria-current="page" className="text-foreground">
-        {product}
-      </li>
-    </ol>
-  </nav>
+        </BreadcrumbLink>
+      </BreadcrumbItem>
+      <BreadcrumbSeparator />
+      <BreadcrumbItem>
+        <BreadcrumbLink href={PROJECTS}>Projects</BreadcrumbLink>
+      </BreadcrumbItem>
+      <BreadcrumbSeparator />
+      <BreadcrumbItem>
+        <BreadcrumbPage>{product}</BreadcrumbPage>
+      </BreadcrumbItem>
+    </BreadcrumbList>
+  </Breadcrumb>
 );

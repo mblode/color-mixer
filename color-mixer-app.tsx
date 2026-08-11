@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleInfoIcon, GithubIcon } from "blode-icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { OIL_BRUSH } from "./brush/oil-brush";
@@ -145,74 +146,69 @@ function App() {
       ) : null}
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-4 p-5 sm:p-6">
-        <div className="flex min-w-0 flex-col items-start gap-2">
-          {/* Root page only, and it has to match the BreadcrumbList in
-              app/page.tsx exactly. */}
-          <div className="pointer-events-auto">
-            <ZoneBreadcrumb product="Colour Mixer" />
-          </div>
+        {/* Root page only, and it has to match the BreadcrumbList in
+            app/page.tsx exactly. Visible title lives in the trail; keep a
+            screen-reader h1 so the page still has a document heading. */}
+        <div className="pointer-events-auto min-w-0">
+          <h1 className="sr-only">Colour Mixer</h1>
+          <ZoneBreadcrumb product="Colour Mixer" />
+        </div>
 
-          <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4">
-            <h1 className="pointer-events-auto font-semibold text-foreground text-xl tracking-tight sm:text-2xl">
-              Colour Mixer
-            </h1>
+        <div className="pointer-events-auto flex shrink-0 items-center gap-0.5">
+          <Button asChild size="icon" variant="ghost">
+            <a
+              aria-label="GitHub"
+              href="https://github.com/mblode/color-mixer"
+              rel="noreferrer"
+              target="_blank"
+            >
+              <GithubIcon className="size-4" />
+            </a>
+          </Button>
 
-            {/*
+          {/*
             A native <details>, so the prose stays in the server-rendered HTML
             and indexable while the canvas keeps the whole viewport. No JS, no
             state, and it collapses out of the way of the dock.
           */}
-            <details className="group pointer-events-auto relative">
-              <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-full bg-card/70 px-3 py-1.5 text-muted-foreground ring-1 ring-inset ring-black/5 backdrop-blur-xl transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-                <h2 className="font-medium text-xs">How the mixing works</h2>
-                <ChevronIcon />
-              </summary>
+          <details className="group relative">
+            <summary
+              aria-label="How the mixing works"
+              className="inline-flex size-10 cursor-pointer list-none items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden"
+            >
+              <CircleInfoIcon aria-hidden="true" className="size-4" />
+            </summary>
 
-              {/* Absolute so opening it never reflows the header row. */}
-              <div className="absolute top-full left-0 z-10 mt-2 w-[min(58ch,calc(100vw-2.5rem))] space-y-3 rounded-surface bg-card/95 p-5 text-muted-foreground text-sm leading-relaxed shadow-[0_8px_30px_-6px_rgba(15,10,6,0.18)] ring-1 ring-inset ring-black/10 backdrop-blur-xl">
-                <p>
-                  Mixing colours on a screen means averaging RGB, which is why
-                  blue and yellow give you grey there and green everywhere else.
-                  Here every colour goes into Mixbox’s latent pigment space
-                  first. Blue dragged through yellow turns green. White pulls a
-                  colour back to a tint instead of just brightening it.
-                </p>
+            {/* Absolute so opening it never reflows the header row. */}
+            <div className="absolute top-full right-0 z-10 mt-2 w-[min(58ch,calc(100vw-2.5rem))] space-y-3 rounded-surface bg-card/95 p-5 text-muted-foreground text-sm leading-relaxed shadow-[0_8px_30px_-6px_rgba(15,10,6,0.18)] ring-1 ring-inset ring-black/10 backdrop-blur-xl">
+              <h2 className="font-medium text-foreground text-sm">
+                How the mixing works
+              </h2>
+              <p>
+                Mixing colours on a screen means averaging RGB, which is why
+                blue and yellow give you grey there and green everywhere else.
+                Here every colour goes into Mixbox’s latent pigment space first.
+                Blue dragged through yellow turns green. White pulls a colour
+                back to a tint instead of just brightening it.
+              </p>
 
-                <p>
-                  The palette is real paint. Each masstone keeps its Colour
-                  Index name, so cadmium yellow is PY35 and phthalo blue is
-                  PB15, the same codes on the side of the tube.
-                </p>
+              <p>
+                The palette is real paint. Each masstone keeps its Colour Index
+                name, so cadmium yellow is PY35 and phthalo blue is PB15, the
+                same codes on the side of the tube.
+              </p>
 
-                <p>
-                  Every pigment also carries a tinting strength, and that’s the
-                  part that catches you. Phthalo blue sits at 3, titanium white
-                  at 0.5. A little phthalo swallows a lot of white, so half and
-                  half on the canvas is nothing like half and half in the
-                  result.
-                </p>
+              <p>
+                Every pigment also carries a tinting strength, and that’s the
+                part that catches you. Phthalo blue sits at 3, titanium white at
+                0.5. A little phthalo swallows a lot of white, so half and half
+                on the canvas is nothing like half and half in the result.
+              </p>
 
-                <p>Pick two and drag one through the other.</p>
-              </div>
-            </details>
-          </div>
+              <p>Pick two and drag one through the other.</p>
+            </div>
+          </details>
         </div>
-
-        <Button
-          asChild
-          className="pointer-events-auto shrink-0"
-          size="sm"
-          variant="ghost"
-        >
-          <a
-            href="https://github.com/mblode/color-mixer"
-            rel="noreferrer"
-            target="_blank"
-          >
-            <GitHubMark />
-            GitHub
-          </a>
-        </Button>
       </header>
 
       {isChecking ? <CanvasMessage>Checking for WebGPU…</CanvasMessage> : null}
@@ -305,7 +301,7 @@ function App() {
         {/* A real contentinfo landmark. This used to be a credit inside the
             "How the mixing works" disclosure, which a closed <details> keeps
             out of the accessibility tree entirely. */}
-        <footer className="pointer-events-auto rounded-full bg-background/85 px-3 py-1.5 ring-1 ring-inset ring-black/10 backdrop-blur-xl">
+        <footer className="pointer-events-auto">
           <CraftedBy />
         </footer>
       </div>
@@ -318,39 +314,6 @@ function CanvasMessage({ children }: { children: React.ReactNode }) {
     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center px-6 text-center text-muted-foreground text-sm">
       {children}
     </div>
-  );
-}
-
-function ChevronIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-3.5 w-3.5 transition-transform group-open:rotate-180 motion-reduce:transition-none"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <path
-        d="m6 9 6 6 6-6"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-// Inline rather than an icon package: one path, one use.
-function GitHubMark() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-4 w-4"
-      fill="currentColor"
-      viewBox="0 0 16 16"
-    >
-      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-    </svg>
   );
 }
 
