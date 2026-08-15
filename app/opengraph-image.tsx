@@ -1,4 +1,5 @@
 import { renderZoneOgImage } from "@/app/og-image-shared";
+import { OgLogo } from "@/app/og-logo";
 
 export {
   OG_CONTENT_TYPE as contentType,
@@ -19,11 +20,9 @@ export const alt = "Colour Mixer: mix and blend colours online";
  */
 export default function OpengraphImage() {
   return renderZoneOgImage({
-    badge: "COLOUR MIXER",
-    eyebrow: "blode.co/color-mixer",
-    // Shorter than the meta description, which runs long for the SERP. A card
-    // is read in a feed, at a glance.
-    subtitle: "Mix pigments and build palettes in the browser.",
-    title: "Colour Mixer: mix and blend colours online",
+    background: "#fafafa",
+    color: "#171717",
+    logo: <OgLogo />,
+    title: "Colour Mixer",
   });
 }
